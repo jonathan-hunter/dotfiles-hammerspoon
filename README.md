@@ -62,11 +62,11 @@ A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) 
 **Rectangle Pro Integration (Hyper+Shift+Key)**
 
 These keybindings forward to Rectangle Pro using `Ctrl+Alt+Cmd+Shift+Key`:
-- `Hyper+Shift+]` - Next display
-- `Hyper+Shift+[` - Previous display
-- `Hyper+Shift+H/J/K` - Window positioning
-- `Hyper+Shift+Y/U/I` - Window sizing
-- `Hyper+Shift+N/M` - Additional layouts
+- `Hyper+Shift+]` - Window to right half
+- `Hyper+Shift+[` - Window to left half
+- `Hyper+Shift+H/J/K` - Window positioning (first fourth, center half, last fourth)
+- `Hyper+Shift+Y/U/I` - Window positioning (top left, top half, top right) 
+- `Hyper+Shift+N/M/,` - Window positioning (bottom left, bottom half, bottom right)
 - `Hyper+Shift+Space` - Maximize
 
 ### Special Functions
