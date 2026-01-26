@@ -15,3 +15,18 @@ end)
 hs.hotkey.bind({}, "F14", function()
   hs.hid.capslock.toggle()
 end)
+
+-- Cmd+Shift+V - Paste as plain text (preserves original clipboard)
+hs.hotkey.bind({"cmd", "shift"}, "V", function()
+  local original = hs.pasteboard.readAllData()
+  local text = hs.pasteboard.getContents()
+  if text and original then
+    hs.pasteboard.setContents(text)
+    hs.timer.doAfter(0.20, function()
+      hs.eventtap.keyStroke({"cmd"}, "v")
+      hs.timer.doAfter(0.10, function()
+        hs.pasteboard.writeAllData(original)
+      end)
+    end)
+  end
+end)
