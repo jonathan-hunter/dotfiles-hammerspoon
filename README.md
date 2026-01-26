@@ -37,19 +37,20 @@ A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) 
 
 | Key | App | Shift+Key | App |
 |-----|-----|-----------|-----|
-| `B` | Safari | `Shift+B` | Firefox |
 | `1` | 1Password | | |
+| `A` | Claude | `Shift+A` | Google Gemini |
+| `B` | Safari | `Shift+B` | Firefox |
 | `C` | Calendar | `Shift+C` | Visual Studio Code |
-| `A` | Claude | `Shift+A` | Perplexity |
-| `T` | iTerm | `Shift+T` | Music |
 | `E` | Mail | `Shift+E` | Microsoft Excel |
 | `F` | Finder | `Shift+F` | FileZilla |
+| `N` | Bear | | |
 | `O` | Obsidian | `Shift+O` | Protégé |
 | `P` | Podcasts | `Shift+P` | Microsoft PowerPoint |
 | `R` | Reminders | | |
 | `S` | Slack | | |
+| `T` | iTerm | `Shift+T` | Music |
 | `W` | WhatsApp | `Shift+W` | Microsoft Word |
-| `Z` | Zotero | `Shift+Z` | Zoom |
+| `Z` | Zoom | `Shift+Z` | Zotero |
 
 ### Window Management
 
@@ -72,6 +73,7 @@ These keybindings forward to Rectangle Pro using `Ctrl+Alt+Cmd+Shift+Key`:
 ### Special Functions
 
 - `Hyper+Shift+R` - Reload Hammerspoon config
+- `Cmd+Shift+V` - Paste as plain text (preserves original clipboard)
 - `F13` - Screenshot to clipboard (⌘⇧4)
 - `F14` - Toggle Caps Lock (for Claude voice mode)
 
