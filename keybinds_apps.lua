@@ -13,7 +13,7 @@ bindApp({}, 'R', "Reminders")
 bindApp({}, 'S', "Slack")
 bindApp({}, 'W', "WhatsApp")
 bindApp({}, 'Z', "zoom.us")
-bindApp({}, 'N', "Bear")
+bindApp({}, 'N', "Notes")
 
 bindApp({'shift'}, 'B', "Firefox")
 bindApp({'shift'}, 'F', "FileZilla")
