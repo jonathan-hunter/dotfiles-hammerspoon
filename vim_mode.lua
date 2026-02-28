@@ -30,7 +30,8 @@ local function inNotes()
 end
 
 local function key(mods, k)
-  hs.eventtap.keyStroke(mods, k, 0)
+  local app = hs.application.frontmostApplication()
+  hs.eventtap.keyStroke(mods, k, 0, app)
 end
 
 local function getCount()
@@ -56,7 +57,7 @@ end
 
 -- Shift modifier for visual mode (extends selection)
 local function mov(mods)
-  if vim.mode == "visual" then
+  if vim.mode == "visual" or (vim.mode == "charjump" and vim._returnToVisual) then
     local m = {}
     for _, v in ipairs(mods) do table.insert(m, v) end
     table.insert(m, "shift")
@@ -245,10 +246,7 @@ actions["~"] = function(n)
     if #ch == 1 then
       local toggled = ch:match("%l") and ch:upper() or ch:lower()
       key({}, "forwarddelete")
-      -- Back up one since selection moved cursor right
-      key({}, "left")
-      key({}, "forwarddelete")
-      hs.eventtap.keyStrokes(toggled)
+      hs.eventtap.keyStrokes(toggled, hs.application.frontmostApplication())
     else
       key({}, "right") -- deselect
     end
@@ -362,6 +360,39 @@ actions["<<"] = function(n)
   recordAction(actions["<<"], n)
 end
 
+-- Text object actions (ciw, diw, yiw, caw, daw, yaw)
+actions.ciw = function(n)
+  key({"alt"}, "left"); key({"alt", "shift"}, "right")
+  key({"cmd"}, "x"); setMode("insert")
+  recordAction(actions.ciw, n)
+end
+actions.diw = function(n)
+  key({"alt"}, "left"); key({"alt", "shift"}, "right")
+  key({"cmd"}, "x")
+  recordAction(actions.diw, n)
+end
+actions.yiw = function()
+  key({"alt"}, "left"); key({"alt", "shift"}, "right")
+  key({"cmd"}, "c"); key({}, "left")
+end
+actions.caw = function(n)
+  key({"alt"}, "left"); key({"alt", "shift"}, "right")
+  key({"shift"}, "right") -- include trailing space
+  key({"cmd"}, "x"); setMode("insert")
+  recordAction(actions.caw, n)
+end
+actions.daw = function(n)
+  key({"alt"}, "left"); key({"alt", "shift"}, "right")
+  key({"shift"}, "right")
+  key({"cmd"}, "x")
+  recordAction(actions.daw, n)
+end
+actions.yaw = function()
+  key({"alt"}, "left"); key({"alt", "shift"}, "right")
+  key({"shift"}, "right")
+  key({"cmd"}, "c"); key({}, "left")
+end
+
 -- Ctrl+d / Ctrl+u (handled in separate tap but defined here for dot)
 local SCROLL_LINES = 15
 
@@ -443,12 +474,12 @@ local mainTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(even
       local n = vim._replaceCount or 1
       for _ = 1, n do
         key({}, "forwarddelete")
-        hs.eventtap.keyStrokes(char)
+        hs.eventtap.keyStrokes(char, hs.application.frontmostApplication())
       end
       recordAction(function(nn)
         for _ = 1, nn do
           key({}, "forwarddelete")
-          hs.eventtap.keyStrokes(char)
+          hs.eventtap.keyStrokes(char, hs.application.frontmostApplication())
         end
       end, n)
       setMode("normal")
@@ -465,15 +496,33 @@ local mainTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(even
     end
     if not flags.ctrl then
       local info = vim._charJumpInfo
+      local returnToVisual = vim._returnToVisual
       charJump(char, info.dir, info.till, vim._charJumpCount or 1)
-      if vim.mode ~= "visual" then
-        setMode("normal")
+      if returnToVisual then
+        setMode("visual")
       else
-        vim.mode = "visual" -- stay in visual
-        vim._charJumpInfo = nil
+        setMode("normal")
       end
       return true
     end
+    return true
+  end
+
+  -- ── Text object sub-mode: waiting for object key (w, W) ──
+  if vim.mode == "textobj" then
+    if code == 53 then
+      if vim._returnToVisual then setMode("visual") else setMode("normal") end
+      return true
+    end
+    if not flags.ctrl and (char == "w" or char == "W") then
+      local objType = vim._textObjType -- "i" or "a"
+      key({"alt"}, "left")
+      key({"alt", "shift"}, "right")
+      if objType == "a" then key({"shift"}, "right") end
+      if vim._returnToVisual then setMode("visual") else setMode("normal") end
+      return true
+    end
+    if vim._returnToVisual then setMode("visual") else setMode("normal") end
     return true
   end
 
@@ -510,6 +559,14 @@ local mainTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(even
 
   -- ── Visual mode ──
   if vim.mode == "visual" then
+    -- Text objects in visual (iw, aw)
+    if char == "i" or char == "a" then
+      vim._textObjType = char
+      vim._returnToVisual = true
+      vim.mode = "textobj"
+      showMode("textobj", char .. "?")
+      return true
+    end
     -- Char jump in visual
     if charJumpStarters[char] then
       vim._charJumpInfo = charJumpStarters[char]
@@ -534,10 +591,19 @@ local mainTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(even
 
   -- ── Normal mode: pending multi-key ──
   if vim.pending then
-    local seq = vim.pending.char .. char
+    local pendingChar = vim.pending.char
+    local savedN = vim.pending.count or n
+
+    -- Chain operator + i/a for text objects (ci→w, di→w, yi→w)
+    if (char == "i" or char == "a") and #pendingChar == 1 then
+      vim.pending = { char = pendingChar .. char, count = savedN }
+      return true
+    end
+
+    local seq = pendingChar .. char
     vim.pending = nil
     if actions[seq] then
-      actions[seq](n)
+      actions[seq](savedN)
       return true
     end
     return true
