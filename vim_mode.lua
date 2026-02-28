@@ -12,16 +12,65 @@ local vim = {
 }
 
 local alert = require("hs.alert")
+local canvas = require("hs.canvas")
+
+-- ── Mode indicator (persistent, lower-right) ─────────────────────
+
+local modeColors = {
+  normal   = { bg = { red = 0.2, green = 0.6, blue = 1.0, alpha = 0.85 }, fg = { white = 1, alpha = 1 } },
+  insert   = { bg = { red = 0.3, green = 0.7, blue = 0.3, alpha = 0.85 }, fg = { white = 1, alpha = 1 } },
+  visual   = { bg = { red = 0.8, green = 0.4, blue = 0.1, alpha = 0.85 }, fg = { white = 1, alpha = 1 } },
+  operator = { bg = { red = 0.7, green = 0.2, blue = 0.7, alpha = 0.85 }, fg = { white = 1, alpha = 1 } },
+  charjump = { bg = { red = 0.7, green = 0.2, blue = 0.7, alpha = 0.85 }, fg = { white = 1, alpha = 1 } },
+  replace  = { bg = { red = 0.8, green = 0.2, blue = 0.2, alpha = 0.85 }, fg = { white = 1, alpha = 1 } },
+}
+
+local modeCanvas = nil
+
+local function updateIndicator(mode, extra)
+  if not modeCanvas then return end
+  local colors = modeColors[mode] or modeColors.normal
+  local display = "-- " .. mode:upper()
+  if extra then display = display .. " " .. extra end
+  if #vim.count > 0 then display = display .. " " .. vim.count end
+  display = display .. " --"
+  modeCanvas[1].fillColor = colors.bg
+  modeCanvas[2].text = hs.styledtext.new(display, {
+    font = { name = "Menlo", size = 14 },
+    color = colors.fg,
+    paragraphStyle = { alignment = "center" },
+  })
+end
+
+local function showIndicator()
+  if modeCanvas then modeCanvas:delete() end
+  local screen = hs.screen.mainScreen():frame()
+  local w, h = 160, 28
+  local x = screen.x + screen.w - w - 20
+  local y = screen.y + screen.h - h - 20
+  modeCanvas = canvas.new({ x = x, y = y, w = w, h = h })
+  modeCanvas:level(canvas.windowLevels.overlay)
+  modeCanvas:appendElements(
+    { type = "rectangle", roundedRectRadii = { xRadius = 6, yRadius = 6 },
+      fillColor = modeColors.normal.bg, strokeColor = { white = 0, alpha = 0.3 }, strokeWidth = 1 },
+    { type = "text", frame = { x = 0, y = "3%", w = "100%", h = "100%" },
+      text = "" }
+  )
+  modeCanvas:show()
+  updateIndicator(vim.mode)
+end
+
+local function hideIndicator()
+  if modeCanvas then
+    modeCanvas:delete()
+    modeCanvas = nil
+  end
+end
 
 -- ── Helpers ──────────────────────────────────────────────────────
 
 local function showMode(mode, extra)
-  alert.closeAll()
-  if mode == "insert" then return end
-  local display = mode:upper()
-  if extra then display = display .. " " .. extra end
-  if #vim.count > 0 then display = display .. " " .. vim.count end
-  alert.show("-- " .. display .. " --", 0.5)
+  updateIndicator(mode, extra)
 end
 
 local function inNotes()
@@ -451,6 +500,9 @@ local charJumpStarters = {
   T = { dir = "backward", till = true  },
 }
 
+-- Forward declaration for toggle (defined after taps)
+local toggleVim
+
 -- ── Main event tap (normal + visual) ─────────────────────────────
 
 local mainTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(event)
@@ -463,6 +515,15 @@ local mainTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(even
 
   -- Pass through Cmd combos always
   if flags.cmd then return false end
+
+  -- Pass through F19 so the hyperkey handler can set f19.isActive
+  if code == 80 then return false end
+
+  -- F19+; toggles vim mode off
+  if char == ";" and f19.isActive then
+    toggleVim()
+    return true
+  end
 
   -- ── Replace sub-mode: next char replaces ──
   if vim.mode == "replace" then
@@ -659,18 +720,23 @@ local escapeTap = hs.eventtap.new({hs.eventtap.event.types.keyDown}, function(ev
   return false
 end)
 
--- ── Toggle: Ctrl+; ───────────────────────────────────────────────
+-- ── Toggle: F19+; ───────────────────────────────────────────────
+-- On: f19:bind fires toggleVim. Off: mainTap detects F19+; and calls toggleVim.
 
-hs.hotkey.bind({"ctrl"}, ";", function()
+toggleVim = function()
   if vim.enabled then
     vim.enabled = false
     mainTap:stop()
     escapeTap:stop()
+    hideIndicator()
     alert.show("Vim Mode OFF", 1)
   else
     vim.enabled = true
+    showIndicator()
     setMode("normal")
     mainTap:start()
     escapeTap:start()
   end
-end)
+end
+
+f19:bind({}, ";", toggleVim)

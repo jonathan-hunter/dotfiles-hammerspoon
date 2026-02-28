@@ -23,6 +23,7 @@ end
 
 -- F19 modal setup
 local f19 = hs.hotkey.modal.new()
+f19.isActive = false  -- tracks whether F19 is currently held
 local f19Tapped = false
 local f19Timer = nil
 
@@ -30,6 +31,7 @@ local f19Timer = nil
 hs.hotkey.bind({}, 'F19',
   function() -- pressed
     f19Tapped = true
+    f19.isActive = true
     -- Enter modal immediately for instant key combo response
     f19:enter()
     
@@ -44,12 +46,13 @@ hs.hotkey.bind({}, 'F19',
     end)
   end,
   function() -- released
+    f19.isActive = false
     -- Stop timer and clean up
     if f19Timer then
       f19Timer:stop()
       f19Timer = nil
     end
-    
+
     if f19Tapped then
       -- Quick tap: trigger Spotlight and exit modal
       f19Tapped = false
