@@ -9,6 +9,7 @@ F19 is used to avoid conflicts with use of modifer combinations such as Ctrl+Alt
 
 -- Configuration
 local SPOTLIGHT_DELAY = 0.15
+local DOUBLE_TAP_DELAY = 0.3
 
 -- Fast keystroke function for better responsiveness
 local function fastKeyStroke(modifiers, key)
@@ -26,6 +27,7 @@ local f19 = hs.hotkey.modal.new()
 f19.isActive = false  -- tracks whether F19 is currently held
 local f19Tapped = false
 local f19Timer = nil
+local lastTapTime = 0
 
 -- Bind F19 with tap/hold detection
 hs.hotkey.bind({}, 'F19',
@@ -54,10 +56,23 @@ hs.hotkey.bind({}, 'F19',
     end
 
     if f19Tapped then
-      -- Quick tap: trigger Spotlight and exit modal
       f19Tapped = false
-      f19:exit()
-      fastKeyStroke({'cmd'}, 'space')
+      local now = hs.timer.secondsSinceEpoch()
+      if (now - lastTapTime) < DOUBLE_TAP_DELAY then
+        -- Double tap: toggle Mission Control
+        lastTapTime = 0
+        f19:exit()
+        hs.spaces.toggleMissionControl()
+      else
+        -- Single tap: trigger Spotlight (delayed to allow double-tap detection)
+        lastTapTime = now
+        f19:exit()
+        hs.timer.doAfter(DOUBLE_TAP_DELAY, function()
+          if lastTapTime == now then
+            fastKeyStroke({'cmd'}, 'space')
+          end
+        end)
+      end
     else
       -- Was held: just exit modal
       f19:exit()
