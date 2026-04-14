@@ -15,7 +15,7 @@ bindApp({}, 'W', "WhatsApp")
 bindApp({}, 'Z', "zoom.us")
 bindApp({}, 'N', "Notes")
 
-bindApp({'shift'}, 'B', "Firefox")
+bindApp({'shift'}, 'B', "Safari")
 bindApp({'shift'}, 'F', "FileZilla")
 bindApp({'shift'}, 'T', "Music")
 bindApp({'shift'}, 'C', "Visual Studio Code")
