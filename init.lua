@@ -13,3 +13,4 @@ require("keybinds_apps")          -- app keybinds
 require("keybind_finder")         -- finder launch/focus logic and keybind
 require("keybinds_window_mgmt")   -- window management keybinds
 require("keybinds_special")       -- reload hammerspoon; screenshot; claude voice mode
+require("menubar_spaces")         -- menu bar indicator for current space

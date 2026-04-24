@@ -42,9 +42,7 @@ hs.hotkey.bind({'shift'}, 'F19',
 -- Define keybinding function - bind hyper+key to launch/focus app
 local function bindApp(mods, key, app)
   f19:bind(mods, key, function()
-    if app then
-      hs.application.launchOrFocus(app)
-    end
+    hs.application.launchOrFocus(app)
   end)
 end
 

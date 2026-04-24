@@ -2,8 +2,8 @@
 
 -- Reload Hammerspoon config (custom handler, not a standard app launch)
 f19:bind({'shift'}, 'R', function()
-  hs.reload()
   hs.alert.show("Config reloaded")
+  hs.timer.doAfter(0.05, hs.reload)
 end)
 
 -- F13 special binding - Screenshot (Clipboard)
