@@ -7,6 +7,7 @@ Useful for apps that don't support F19 but need a unique keybind (Rectangle Pro)
 
 -- Configuration
 local WINDOW_FOCUS_DELAY = 0.1
+hs.window.animationDuration = 0
 
 bindSpecial({'shift'}, ']', {'shift', 'ctrl', 'alt', 'cmd'}, ']')
 bindSpecial({'shift'}, '[', {'shift', 'ctrl', 'alt', 'cmd'}, '[')
@@ -56,3 +57,25 @@ hs.window.filter.default:subscribe(hs.window.filter.windowDestroyed, function()
         end
     end)
 end)
+
+--- Move focused window to space N (1..9)
+local function moveWinToSpace(n)
+  local win = hs.window.focusedWindow()
+  if not win then return end
+  local pt   = win:zoomButtonRect()             -- titlebar anchor
+  pt.x, pt.y = pt.x + pt.w + 5, pt.y + pt.h / 2 -- free spot right of zoom
+  local orig = hs.mouse.absolutePosition()
+
+  hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseDown, pt):post()
+  hs.timer.usleep(10000)                        -- let Dock register the drag
+  hs.eventtap.keyStroke({"ctrl"}, tostring(n), 0)
+  hs.timer.doAfter(0.05, function()
+    hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseUp, pt):post()
+    hs.mouse.absolutePosition(orig)
+  end)
+end
+
+-- Shift+Hyper+1..9 → move focused window to space N
+for i = 1, 9 do
+  f19:bind({'shift'}, tostring(i), function() moveWinToSpace(i) end)
+end
