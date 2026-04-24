@@ -13,5 +13,3 @@ require("keybinds_apps")          -- app keybinds
 require("keybind_finder")         -- finder launch/focus logic and keybind
 require("keybinds_window_mgmt")   -- window management keybinds
 require("keybinds_special")       -- reload hammerspoon; screenshot; claude voice mode
--- require("vim_mode")               -- vim mode keybinds
--- require("markdown_notes")         -- markdown → Apple Notes converter

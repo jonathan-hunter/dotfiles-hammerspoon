@@ -4,9 +4,7 @@ A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) 
 
 ## Features
 
-- **Hyperkey Modal**: Caps Lock mapped to F19 acts as a hyperkey with tap/hold detection
-  - **Tap**: Opens Spotlight (⌘Space)
-  - **Hold + Key**: Triggers custom keybindings
+- **Hyperkey Modal**: Caps Lock mapped to F19 acts as a pure modifier key — hold and press another key to trigger custom keybindings
 - **Application Launcher**: Quick launch/focus apps with single keystrokes
 - **Window Management**: Vim-style window focus navigation and Rectangle Pro integration
 - **Special Functions**: Config reload, screenshots, voice mode toggle
@@ -83,13 +81,6 @@ When a window is closed, the next visible window is automatically focused (with 
 
 ## Configuration
 
-### Adjusting Spotlight Delay
-
-Edit `hyperkey.lua`:
-```lua
-local SPOTLIGHT_DELAY = 0.15  -- Adjust tap detection threshold (seconds)
-```
-
 ### Adjusting Window Focus Delay
 
 Edit `keybinds_window_mgmt.lua`:
@@ -102,11 +93,8 @@ local WINDOW_FOCUS_DELAY = 0.1  -- Delay after window close (seconds)
 ### Hyperkey Modal
 
 The hyperkey system uses Hammerspoon's modal hotkey functionality:
-1. Pressing F19 enters the modal immediately (for instant response to key combos)
-2. A timer tracks whether the key was held or tapped
-3. On release:
-   - **Quick tap**: Triggers Spotlight and exits modal
-   - **Held**: Just exits modal (key combo already executed)
+1. Pressing F19 enters the modal — bindings become active
+2. Releasing F19 exits the modal — bindings become inactive
 
 ### Helper Functions
 

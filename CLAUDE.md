@@ -48,5 +48,4 @@ end)
 
 ## Key Constants
 
-- `SPOTLIGHT_DELAY` in `hyperkey.lua` (0.15s) - tap detection threshold
 - `WINDOW_FOCUS_DELAY` in `keybinds_window_mgmt.lua` (0.1s) - delay after window close before auto-focus
