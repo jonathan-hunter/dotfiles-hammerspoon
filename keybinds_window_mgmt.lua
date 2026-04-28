@@ -9,20 +9,20 @@ Useful for apps that don't support F19 but need a unique keybind (Rectangle Pro)
 local WINDOW_FOCUS_DELAY = 0.1
 hs.window.animationDuration = 0
 
-bindSpecial({'shift'}, ']', {'shift', 'ctrl', 'alt', 'cmd'}, ']')
-bindSpecial({'shift'}, '[', {'shift', 'ctrl', 'alt', 'cmd'}, '[')
-bindSpecial({'shift'}, 'H', {'shift', 'ctrl', 'alt', 'cmd'}, 'H')
-bindSpecial({'shift'}, 'G', {'shift', 'ctrl', 'alt', 'cmd'}, 'G')
-bindSpecial({'shift'}, 'J', {'shift', 'ctrl', 'alt', 'cmd'}, 'J')
-bindSpecial({'shift'}, 'K', {'shift', 'ctrl', 'alt', 'cmd'}, 'K')
-bindSpecial({'shift'}, 'L', {'shift', 'ctrl', 'alt', 'cmd'}, 'L')
-bindSpecial({'shift'}, 'Y', {'shift', 'ctrl', 'alt', 'cmd'}, 'Y')
-bindSpecial({'shift'}, 'U', {'shift', 'ctrl', 'alt', 'cmd'}, 'U')
-bindSpecial({'shift'}, 'I', {'shift', 'ctrl', 'alt', 'cmd'}, 'I')
-bindSpecial({'shift'}, 'N', {'shift', 'ctrl', 'alt', 'cmd'}, 'N')
-bindSpecial({'shift'}, 'M', {'shift', 'ctrl', 'alt', 'cmd'}, 'M')
-bindSpecial({'shift'}, ',', {'ctrl', 'alt', 'cmd'}, ',')           -- special case: omits shift to avoid unknown keybind conflict (TODO: document which conflict) 
-bindSpecial({'shift'}, 'space', {'shift', 'ctrl', 'alt', 'cmd'}, 'space')
+bindSpecial({'shift'}, ']', {'shift', 'ctrl', 'alt', 'cmd'}, ']')         -- tile right half
+bindSpecial({'shift'}, '[', {'shift', 'ctrl', 'alt', 'cmd'}, '[')         -- tile left half
+bindSpecial({'shift'}, 'H', {'shift', 'ctrl', 'alt', 'cmd'}, 'H')         -- tile left quarter
+bindSpecial({'shift'}, 'G', {'shift', 'ctrl', 'alt', 'cmd'}, 'G')         -- tile left three-quarters
+bindSpecial({'shift'}, 'J', {'shift', 'ctrl', 'alt', 'cmd'}, 'J')         -- tile center half
+bindSpecial({'shift'}, 'K', {'shift', 'ctrl', 'alt', 'cmd'}, 'K')         -- tile third quarter
+bindSpecial({'shift'}, 'L', {'shift', 'ctrl', 'alt', 'cmd'}, 'L')         -- tile right quarter
+bindSpecial({'shift'}, 'Y', {'shift', 'ctrl', 'alt', 'cmd'}, 'Y')         -- tile top left quarter
+bindSpecial({'shift'}, 'U', {'shift', 'ctrl', 'alt', 'cmd'}, 'U')         -- tile top half
+bindSpecial({'shift'}, 'I', {'shift', 'ctrl', 'alt', 'cmd'}, 'I')         -- tile top right quarter
+bindSpecial({'shift'}, 'N', {'shift', 'ctrl', 'alt', 'cmd'}, 'N')         -- tile bottom left quarter
+bindSpecial({'shift'}, 'M', {'shift', 'ctrl', 'alt', 'cmd'}, 'M')         -- tile bottom half
+bindSpecial({'shift'}, ',', {'ctrl', 'alt', 'cmd'}, ',')                  -- tile bottom right quarter, special case: omits shift to avoid unknown keybind conflict (TODO: document which conflict) 
+bindSpecial({'shift'}, 'space', {'shift', 'ctrl', 'alt', 'cmd'}, 'space') -- tile full screen
 
 -- Window focus keybinds
 -- Bind F19+[h/j/k/l] to directional window focus
