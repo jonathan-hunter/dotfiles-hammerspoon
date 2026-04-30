@@ -1,28 +1,50 @@
 --[[
 ~/.hammerspoon/keybinds_window_mgmt.lua
-Window management keybindings using hyper key (Caps Lock mapped to F19)
-Special keybinds: F19+key transmits as modified keystrokes
-Useful for apps that don't support F19 but need a unique keybind (Rectangle Pro)
+Window management keybindings using hyper key (Caps Lock mapped to F19).
+Native Hammerspoon tiling layout, vim-style focus navigation, and
+shift+hyper+1..9 to move the focused window to space N.
 ]]
 
 -- Configuration
 local WINDOW_FOCUS_DELAY = 0.1
+local PADDING = 1
 hs.window.animationDuration = 0
 
-bindSpecial({'shift'}, ']', {'shift', 'ctrl', 'alt', 'cmd'}, ']')         -- tile right half
-bindSpecial({'shift'}, '[', {'shift', 'ctrl', 'alt', 'cmd'}, '[')         -- tile left half
-bindSpecial({'shift'}, 'H', {'shift', 'ctrl', 'alt', 'cmd'}, 'H')         -- tile left quarter
-bindSpecial({'shift'}, 'G', {'shift', 'ctrl', 'alt', 'cmd'}, 'G')         -- tile left three-quarters
-bindSpecial({'shift'}, 'J', {'shift', 'ctrl', 'alt', 'cmd'}, 'J')         -- tile center half
-bindSpecial({'shift'}, 'K', {'shift', 'ctrl', 'alt', 'cmd'}, 'K')         -- tile third quarter
-bindSpecial({'shift'}, 'L', {'shift', 'ctrl', 'alt', 'cmd'}, 'L')         -- tile right quarter
-bindSpecial({'shift'}, 'Y', {'shift', 'ctrl', 'alt', 'cmd'}, 'Y')         -- tile top left quarter
-bindSpecial({'shift'}, 'U', {'shift', 'ctrl', 'alt', 'cmd'}, 'U')         -- tile top half
-bindSpecial({'shift'}, 'I', {'shift', 'ctrl', 'alt', 'cmd'}, 'I')         -- tile top right quarter
-bindSpecial({'shift'}, 'N', {'shift', 'ctrl', 'alt', 'cmd'}, 'N')         -- tile bottom left quarter
-bindSpecial({'shift'}, 'M', {'shift', 'ctrl', 'alt', 'cmd'}, 'M')         -- tile bottom half
-bindSpecial({'shift'}, ',', {'ctrl', 'alt', 'cmd'}, ',')                  -- tile bottom right quarter, special case: omits shift to avoid unknown keybind conflict (TODO: document which conflict) 
-bindSpecial({'shift'}, 'space', {'shift', 'ctrl', 'alt', 'cmd'}, 'space') -- tile full screen
+-- Tile the focused window to a fractional rect of its screen, inset by PADDING px.
+-- x, y, w, h are fractions in [0, 1] of the screen's usable frame.
+local function tile(x, y, w, h)
+  return function()
+    local win = hs.window.focusedWindow()
+    if not win then return end
+    local f = win:screen():frame()
+    win:setFrame({
+      x = f.x + f.w * x + PADDING,
+      y = f.y + f.h * y + PADDING,
+      w = f.w * w - PADDING * 2,
+      h = f.h * h - PADDING * 2,
+    })
+  end
+end
+
+-- Halves and full screen
+f19:bind({'shift'}, ']',     tile(0.5,  0,    0.5,  1))    -- right half
+f19:bind({'shift'}, '[',     tile(0,    0,    0.5,  1))    -- left half
+f19:bind({'shift'}, 'space', tile(0,    0,    1,    1))    -- full screen
+
+-- Vertical strips (full height)
+f19:bind({'shift'}, 'H', tile(0,    0, 0.25, 1))           -- left quarter
+f19:bind({'shift'}, 'G', tile(0,    0, 0.75, 1))           -- left three-quarters
+f19:bind({'shift'}, 'J', tile(0.25, 0, 0.5,  1))           -- center half
+f19:bind({'shift'}, 'K', tile(0.5,  0, 0.25, 1))           -- third quarter
+f19:bind({'shift'}, 'L', tile(0.75, 0, 0.25, 1))           -- right quarter
+
+-- Corner quarters and top/bottom halves
+f19:bind({'shift'}, 'Y', tile(0,   0,   0.5, 0.5))         -- top left quarter
+f19:bind({'shift'}, 'U', tile(0,   0,   1,   0.5))         -- top half
+f19:bind({'shift'}, 'I', tile(0.5, 0,   0.5, 0.5))         -- top right quarter
+f19:bind({'shift'}, 'N', tile(0,   0.5, 0.5, 0.5))         -- bottom left quarter
+f19:bind({'shift'}, 'M', tile(0,   0.5, 1,   0.5))         -- bottom half
+f19:bind({'shift'}, ',', tile(0.5, 0.5, 0.5, 0.5))         -- bottom right quarter
 
 -- Window focus keybinds
 -- Bind F19+[h/j/k/l] to directional window focus

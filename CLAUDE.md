@@ -17,14 +17,15 @@ View the Hammerspoon console for errors: menu bar icon → Console
 
 ## Architecture
 
-**Module loading pattern:** `init.lua` loads `hyperkey.lua` first, then exposes three globals (`f19`, `bindApp`, `bindSpecial`) that all other keybind modules use directly without imports.
+**Module loading pattern:** `init.lua` loads `hyperkey.lua` first, then exposes two globals (`f19`, `bindApp`) that all other keybind modules use directly without imports.
 
 **File responsibilities:**
-- `hyperkey.lua` - Core modal logic with tap/hold detection. Tap triggers Spotlight, hold enables keybindings. Exports `modal`, `bindApp()`, and `bindSpecial()`.
+- `hyperkey.lua` - Core modal logic. F19 acts as a pure modifier: modal is entered on key down, exited on key up. Exports `modal` and `bindApp()`.
 - `keybinds_apps.lua` - Application launch/focus bindings using `bindApp()`
-- `keybinds_window_mgmt.lua` - Vim-style window focus (hjkl) and Rectangle Pro integration via `bindSpecial()`
+- `keybinds_window_mgmt.lua` - Native Hammerspoon tiling, vim-style window focus (hjkl), and shift+hyper+1..9 to move focused window to space N
 - `keybinds_special.lua` - Config reload, paste as plain text, F13/F14 special keys
 - `keybind_finder.lua` - Custom Finder handling with AppleScript (opens new window if none exist)
+- `space_hud.lua` - Transient HUD that flashes the current Mission Control space index on space change
 
 ## Adding Keybindings
 
@@ -32,11 +33,6 @@ View the Hammerspoon console for errors: menu bar icon → Console
 ```lua
 bindApp({}, 'X', "App Name")           -- Hyper+X
 bindApp({'shift'}, 'X', "Other App")   -- Hyper+Shift+X
-```
-
-**Keystroke forwarding:** In `keybinds_window_mgmt.lua` (for apps that don't recognize F19):
-```lua
-bindSpecial({'shift'}, 'key', {'ctrl', 'alt', 'cmd'}, 'key')
 ```
 
 **Custom function:** Bind directly to `f19` modal:

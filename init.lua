@@ -6,12 +6,10 @@ local hyperkey = require("hyperkey")  -- hyperkey logic
 -- Note: These are intentionally global to allow keybind modules to use them without imports
 f19 = hyperkey.modal
 bindApp = hyperkey.bindApp
-bindSpecial = hyperkey.bindSpecial
 
 -- Load other keybind modules
 require("keybinds_apps")          -- app keybinds
 require("keybind_finder")         -- finder launch/focus logic and keybind
--- require("keybinds_window_mgmt")   -- window management keybinds (Rectangle Pro forwarding, disabled)
-require("keybinds_window_mgmt_hs")    -- window management keybinds (native Hammerspoon tiling)
+require("keybinds_window_mgmt")   -- window management: tiling, focus nav, move-to-space
 require("keybinds_special")       -- reload hammerspoon; screenshot; claude voice mode
-require("menubar_spaces")         -- menu bar indicator for current space
+require("space_hud")              -- transient HUD showing current space on space change

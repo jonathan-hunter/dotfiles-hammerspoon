@@ -1,6 +1,6 @@
--- ~/.hammerspoon/menubar_spaces.lua
--- Transient HUD that flashes the current Mission Control space index in the
--- center of the main screen on every space change.
+-- ~/.hammerspoon/space_hud.lua
+-- Transient HUD that flashes the current Mission Control space index near the
+-- bottom-center of the main screen on every space change.
 
 local spaces = require("hs.spaces")
 
