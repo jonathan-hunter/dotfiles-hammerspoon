@@ -28,6 +28,18 @@ hs.hotkey.bind({'shift'}, 'F19',
   function() f19:exit() end
 )
 
+-- Bind Alt+F19 to enter the modal (enables Option+Hyper bindings)
+hs.hotkey.bind({'alt'}, 'F19',
+  function() f19:enter() end,
+  function() f19:exit() end
+)
+
+-- Bind Shift+Alt+F19 to enter the modal (enables Shift+Option+Hyper bindings)
+hs.hotkey.bind({'shift', 'alt'}, 'F19',
+  function() f19:enter() end,
+  function() f19:exit() end
+)
+
 -- Define keybinding function - bind hyper+key to launch/focus app
 local function bindApp(mods, key, app)
   f19:bind(mods, key, function()
