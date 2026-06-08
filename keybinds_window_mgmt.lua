@@ -8,7 +8,6 @@ shift+hyper+1..9 to move the focused window to space N.
 -- Configuration
 local WINDOW_FOCUS_DELAY = 0.1
 local PADDING = 1
-local SLACK_TITLEBAR_OFFSET = 60  -- extra px right to clear Slack's sidebar-toggle button
 hs.window.animationDuration = 0
 
 -- Tile the focused window to a fractional rect of its screen, inset by PADDING px.
@@ -85,16 +84,12 @@ end)
 local function moveWinToSpace(n)
   local win = hs.window.focusedWindow()
   if not win then return end
-  local pt   = win:zoomButtonRect()             -- titlebar anchor
-  pt.x, pt.y = pt.x + pt.w + 5, pt.y + pt.h / 2 -- free spot right of zoom
-
-  -- Slack adds a sidebar-toggle button right where we'd click; push further
-  -- right onto empty titlebar so the click starts a window drag, not a toggle.
-  local app = win:application()
-  if app and app:name() == "Slack" then
-    pt.x = pt.x + SLACK_TITLEBAR_OFFSET
-  end
-
+  -- Anchor a few pixels above the minimize (yellow) button. That strip is
+  -- empty draggable titlebar on every standard macOS window, including apps
+  -- like Brave and Slack whose own UI crowds the area right of the zoom button.
+  local pt = win:zoomButtonRect()
+  pt.x = pt.x + pt.w / 2 - 20
+  pt.y = pt.y - 5
   local orig = hs.mouse.absolutePosition()
 
   hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseDown, pt):post()
