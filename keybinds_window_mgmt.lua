@@ -93,11 +93,15 @@ local function moveWinToSpace(n)
   local orig = hs.mouse.absolutePosition()
 
   hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseDown, pt):post()
-  hs.timer.usleep(10000)                        -- let Dock register the drag
-  hs.eventtap.keyStroke({"ctrl"}, tostring(n), 0)
-  hs.timer.doAfter(0.05, function()
-    hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseUp, pt):post()
-    hs.mouse.absolutePosition(orig)
+  -- Async delay instead of hs.timer.usleep, which would freeze the whole event
+  -- loop -- including the F19 key-up callback -- for 10ms while the hyper key
+  -- is still held, and this binding fires precisely while it is held.
+  hs.timer.doAfter(0.01, function()             -- let Dock register the drag
+    hs.eventtap.keyStroke({"ctrl"}, tostring(n), 0)
+    hs.timer.doAfter(0.05, function()
+      hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseUp, pt):post()
+      hs.mouse.absolutePosition(orig)
+    end)
   end)
 end
 
