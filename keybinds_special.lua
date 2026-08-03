@@ -6,6 +6,17 @@ f19:bind({'shift'}, 'R', function()
   hs.timer.doAfter(0.05, hs.reload)
 end)
 
+-- Hyper+Shift+Opt+Q - run the "Quit All Apps" Shortcut. Async hs.task:
+-- a synchronous run would block the Lua loop -- including
+-- the F19 key-up callback -- while the hyper key is held.
+f19:bind({'shift', 'alt'}, 'Q', function()
+  hs.task.new("/usr/bin/shortcuts", function(exitCode)
+    if exitCode ~= 0 then
+      hs.alert.show("Quit All Apps shortcut failed")
+    end
+  end, { "run", "Quit All Apps" }):start()
+end)
+
 -- F13 special binding - Screenshot (Clipboard)
 hs.hotkey.bind({}, "F13", function()
   hs.eventtap.keyStroke({"shift", "cmd"}, "4")
