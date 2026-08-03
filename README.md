@@ -5,7 +5,7 @@ A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) 
 ## Features
 
 - **Hyperkey Modal**: Caps Lock mapped to F19 acts as a pure modifier key — hold and press another key to trigger custom keybindings
-- **Application Launcher**: Quick launch/focus apps with single keystrokes
+- **Application Launcher**: Quick launch/focus apps with single keystrokes; pressing again while the app is frontmost cycles through its windows
 - **Window Management**: Native tiling, vim-style focus navigation, and move-window-to-space
 - **Space Taskbar**: Menu bar strip of app icons grouped by Desktop number, with the current Space highlighted, a click-to-jump dropdown, and a transient on-screen HUD when switching spaces
 - **Special Functions**: Config reload, screenshots, voice mode toggle
@@ -38,11 +38,13 @@ A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) 
 
 ### Application Launcher (Hyper + Key)
 
+Pressing a key launches or focuses the app. Pressing it again while that app is already frontmost cycles through the app's windows on the current Space (minimized windows are skipped, like cmd+backtick).
+
 | Key | App       | Shift+Key | App                  |
 | --- | --------- | --------- | -------------------- |
 | `1` | 1Password |           |                      |
 | `A` | Claude    | `Shift+A` | Google Gemini        |
-| `B` | Safari    | `Shift+B` | Firefox              |
+| `B` | Brave     | `Shift+B` | Safari               |
 | `C` | Calendar  | `Shift+C` | Visual Studio Code   |
 | `E` | Mail      | `Shift+E` | Microsoft Excel      |
 | `F` | Finder    | `Shift+F` | FileZilla            |

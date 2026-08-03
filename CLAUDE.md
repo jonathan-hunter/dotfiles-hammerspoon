@@ -20,7 +20,7 @@ View the Hammerspoon console for errors: menu bar icon → Console
 **Module loading pattern:** `init.lua` loads `hyperkey.lua` first, then exposes two globals (`f19`, `bindApp`) that all other keybind modules use directly without imports.
 
 **File responsibilities:**
-- `hyperkey.lua` - Core modal logic. F19 acts as a pure modifier: modal is entered on key down, exited on key up. Exports `modal` and `bindApp()`.
+- `hyperkey.lua` - Core modal logic. F19 acts as a pure modifier: modal is entered on key down, exited on key up. Exports `modal` and `bindApp()`. When the bound app is already frontmost, `bindApp()` cycles through its windows on the current Space instead of re-launching.
 - `keybinds_apps.lua` - Application launch/focus bindings using `bindApp()`
 - `keybinds_window_mgmt.lua` - Native Hammerspoon tiling, vim-style window focus (hjkl), and shift+hyper+1..9 to move focused window to space N
 - `keybinds_special.lua` - Config reload, paste as plain text, F13/F14 special keys

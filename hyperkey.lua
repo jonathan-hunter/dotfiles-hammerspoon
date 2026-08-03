@@ -96,10 +96,121 @@ function f19.bind(self, mods, key, pressedFn, releasedFn, repeatFn)
   return rawBind(self, mods, key, withPet(pressedFn), withPet(releasedFn), withPet(repeatFn))
 end
 
--- Define keybinding function - bind hyper+key to launch/focus app
+-- launchOrFocus() resolves its argument against the app bundle's filename,
+-- but some apps run under a different process name (Visual Studio Code.app
+-- runs as "Code"; WhatsApp's name carries an invisible directional mark), so
+-- check both when deciding whether the bound app is already frontmost.
+local function frontmostIfMatches(appName)
+  local front = hs.application.frontmostApplication()
+  if not front then return nil end
+  if front:name() == appName then return front end
+  local path = front:path()
+  if path and path:match("([^/]+)%.app$") == appName then return front end
+  return nil
+end
+
+-- Delay before focusing a window after a ctrl+N Space switch: AX needs the
+-- transition to settle before it can see the destination Space's windows.
+local CYCLE_SPACE_FOCUS_DELAY = 0.30
+
+-- The app's standard, non-minimized windows sorted by id (a stable ring order
+-- regardless of z-order). AX also reports windows on other Spaces for some
+-- apps, so when a current-Space window-id set is given, filter to it.
+local function standardWindows(app, spaceWindowSet)
+  local wins = {}
+  for _, win in ipairs(app:allWindows()) do
+    if win:isStandard() and not win:isMinimized()
+        and (not spaceWindowSet or spaceWindowSet[win:id()]) then
+      wins[#wins + 1] = win
+    end
+  end
+  table.sort(wins, function(a, b) return a:id() < b:id() end)
+  return wins
+end
+
+local function currentSpaceWindowSet()
+  local focused = hs.spaces.focusedSpace()
+  local wins = focused and hs.spaces.windowsForSpace(focused)
+  if not wins then return nil end
+  local set = {}
+  for _, id in ipairs(wins) do set[id] = true end
+  return set
+end
+
+-- Cycle the app's windows. With 2+ windows on the current Space, cycle among
+-- them. Otherwise hop to the next Desktop holding this app's windows (per the
+-- taskbar's model) via ctrl+N -- same mechanism as the HUD/taskbar, so the
+-- indicators stay in sync -- and focus the app's window there on arrival.
+-- Sync Spaces IPC only runs here, on an explicit keypress, never on a watcher.
+local function cycleAppWindows(app)
+  local wins = standardWindows(app, currentSpaceWindowSet())
+  if #wins >= 2 then
+    local focused = app:focusedWindow()
+    local focusedId = focused and focused:id()
+    local nextWin = wins[1]
+    for i, win in ipairs(wins) do
+      if win:id() == focusedId then
+        nextWin = wins[(i % #wins) + 1]
+        break
+      end
+    end
+    nextWin:focus()
+    return
+  end
+
+  -- 0 or 1 windows here: find Desktops with this app, lazily via the taskbar
+  -- model (hyperkey loads before the space modules, so no top-level require).
+  local okT, taskbar = pcall(require, "space_taskbar")
+  local okS, spaceState = pcall(require, "space_state")
+  if not (okT and okS) then return end
+  local bundle = app:bundleID()
+  local cur = spaceState.currentSpace()
+  local curIdx = cur and cur.index
+  local desktops = {}
+  for i, group in ipairs(taskbar.getModel()) do
+    if i ~= curIdx and i <= 9 then
+      for _, b in ipairs(group.bundles) do
+        if b == bundle then
+          desktops[#desktops + 1] = i
+          break
+        end
+      end
+    end
+  end
+  if #desktops == 0 then return end
+
+  local target = desktops[1]  -- wrap to the first if none after the current
+  if curIdx then
+    for _, d in ipairs(desktops) do
+      if d > curIdx then target = d break end
+    end
+  end
+  hs.eventtap.keyStroke({ "ctrl" }, tostring(target), 0)
+  hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
+    local arrived = standardWindows(app, currentSpaceWindowSet())
+    if arrived[1] then arrived[1]:focus() end
+  end)
+end
+
+-- Define keybinding function - bind hyper+key to launch/focus app.
+-- Pressing the key again while the app is already frontmost cycles/hops
+-- through its windows instead of being a no-op. After a plain launch/focus,
+-- if the app activated without a window on this Space (macOS does not follow
+-- the app to its Space), hop to it.
 local function bindApp(mods, key, app)
   f19:bind(mods, key, function()
+    local front = frontmostIfMatches(app)
+    if front then
+      cycleAppWindows(front)
+      return
+    end
     hs.application.launchOrFocus(app)
+    hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
+      local activated = frontmostIfMatches(app)
+      if activated and #standardWindows(activated, currentSpaceWindowSet()) == 0 then
+        cycleAppWindows(activated)
+      end
+    end)
   end)
 end
 
