@@ -7,7 +7,10 @@ shift+hyper+1..9 to move the focused window to space N.
 
 -- Configuration
 local WINDOW_FOCUS_DELAY = 0.1
+local NAVIGATION_REFRESH_DELAY = 0.12
+local NAVIGATION_SPACE_REFRESH_DELAY = 0.20
 local PADDING = 1
+local spaces = require("hs.spaces")
 hs.window.animationDuration = 0
 
 -- Tile the focused window to a fractional rect of its screen, inset by PADDING px.
@@ -46,48 +49,92 @@ f19:bind({'shift'}, 'N', tile(0,   0.5, 0.5, 0.5))         -- bottom left quarte
 f19:bind({'shift'}, 'M', tile(0,   0.5, 1,   0.5))         -- bottom half
 f19:bind({'shift'}, ',', tile(0.5, 0.5, 0.5, 0.5))         -- bottom right quarter
 
--- Window focus keybinds
--- Bind F19+[h/j/k/l] to directional window focus
-f19:bind({}, "h", function()
-  local win = hs.window.focusedWindow()
-  if win then win:focusWindowWest() end
-end)
-f19:bind({}, "j", function()
-  local win = hs.window.focusedWindow()
-  if win then win:focusWindowSouth() end
-end)
-f19:bind({}, "k", function()
-  local win = hs.window.focusedWindow()
-  if win then win:focusWindowNorth() end
-end)
-f19:bind({}, "l", function()
-  local win = hs.window.focusedWindow()
-  if win then win:focusWindowEast() end
-end)
+-- Directional focus is called frequently while Hyper is held. Calling
+-- focusWindowWest/North/South/East without candidates makes Hammerspoon query
+-- every application on every keypress, so maintain a current-Space candidate
+-- list and refresh it once when the window set or active Space changes.
+local navigationWindows = {}
 
--- Auto-focus next window when current window is closed
-hs.window.filter.default:subscribe(hs.window.filter.windowDestroyed, function()
-    -- Small delay to ensure window list is updated
-    hs.timer.doAfter(WINDOW_FOCUS_DELAY, function()
-        local windows = hs.window.orderedWindows()
-        -- Filter out minimized and hidden windows
-        for _, win in ipairs(windows) do
-            if win:isStandard() and win:isVisible() then
-                win:focus()
-                return
-            end
-        end
-    end)
-end)
+local function refreshNavigationWindows()
+  local refreshed = {}
+  for _, win in ipairs(hs.window.orderedWindows()) do
+    if win:isStandard() and win:isVisible() then
+      refreshed[#refreshed + 1] = win
+    end
+  end
+  navigationWindows = refreshed
+end
 
---- Move focused window to space N (1..9)
-local function moveWinToSpace(n)
+local navigationRefreshTimer = hs.timer.delayed.new(
+  NAVIGATION_REFRESH_DELAY,
+  refreshNavigationWindows
+)
+
+local function focusDirection(method)
   local win = hs.window.focusedWindow()
   if not win then return end
+  if #navigationWindows == 0 then refreshNavigationWindows() end
+  win[method](win, navigationWindows)
+end
+
+f19:bind({}, "h", function() focusDirection("focusWindowWest") end)
+f19:bind({}, "j", function() focusDirection("focusWindowSouth") end)
+f19:bind({}, "k", function() focusDirection("focusWindowNorth") end)
+f19:bind({}, "l", function() focusDirection("focusWindowEast") end)
+
+local windowFilter = hs.window.filter.default
+local cacheEvents = {
+  hs.window.filter.windowCreated,
+  hs.window.filter.windowVisible,
+  hs.window.filter.windowNotVisible,
+  hs.window.filter.windowMinimized,
+  hs.window.filter.windowUnminimized,
+  hs.window.filter.windowHidden,
+  hs.window.filter.windowUnhidden,
+}
+windowFilter:subscribe(cacheEvents, function()
+  navigationRefreshTimer:start()
+end)
+
+-- Clear stale candidates immediately on a Space change, then rebuild after the
+-- reduced-motion transition has settled. The watcher itself performs no AX or
+-- Spaces IPC, keeping it out of the switching hot path.
+local navigationSpaceWatcher = spaces.watcher.new(function()
+  navigationWindows = {}
+  navigationRefreshTimer:start(NAVIGATION_SPACE_REFRESH_DELAY)
+end)
+navigationSpaceWatcher:start()
+
+-- Auto-focus only when macOS has not already selected a replacement window.
+-- This avoids both a full orderedWindows() query and focus stealing after every
+-- background window destruction.
+local closeFocusTimer = hs.timer.delayed.new(WINDOW_FOCUS_DELAY, function()
+  if hs.window.focusedWindow() then return end
+  refreshNavigationWindows()
+  if navigationWindows[1] then navigationWindows[1]:focus() end
+end)
+
+windowFilter:subscribe(hs.window.filter.windowDestroyed, function()
+  navigationRefreshTimer:start()
+  closeFocusTimer:start()
+end)
+
+-- Populate the candidate cache after this config load finishes.
+navigationRefreshTimer:start(0)
+
+local function switchToSpaceNumber(n)
+  hs.eventtap.keyStroke({"ctrl"}, tostring(n), 0)
+end
+
+local function moveWinToSpaceByDrag(win, n)
   -- Anchor a few pixels above the minimize (yellow) button. That strip is
   -- empty draggable titlebar on every standard macOS window, including apps
   -- like Brave and Slack whose own UI crowds the area right of the zoom button.
   local pt = win:zoomButtonRect()
+  -- nil for windows without a zoom button (dialogs, palettes, some Electron
+  -- windows); bail rather than error -- and crucially, bail before posting
+  -- the mouse-down, which would otherwise leave a stuck virtual drag.
+  if not pt then return end
   pt.x = pt.x + pt.w / 2 - 20
   pt.y = pt.y - 5
   local orig = hs.mouse.absolutePosition()
@@ -97,7 +144,7 @@ local function moveWinToSpace(n)
   -- loop -- including the F19 key-up callback -- for 10ms while the hyper key
   -- is still held, and this binding fires precisely while it is held.
   hs.timer.doAfter(0.01, function()             -- let Dock register the drag
-    hs.eventtap.keyStroke({"ctrl"}, tostring(n), 0)
+    switchToSpaceNumber(n)
     hs.timer.doAfter(0.05, function()
       hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseUp, pt):post()
       hs.mouse.absolutePosition(orig)
@@ -105,7 +152,21 @@ local function moveWinToSpace(n)
   end)
 end
 
+--- Move focused window to space N (1..9)
+local function moveWinToSpace(n)
+  local win = hs.window.focusedWindow()
+  if not win then return end
+  moveWinToSpaceByDrag(win, n)
+end
+
 -- Shift+Hyper+1..9 → move focused window to space N
 for i = 1, 9 do
   f19:bind({'shift'}, tostring(i), function() moveWinToSpace(i) end)
 end
+
+return {
+  windowFilter = windowFilter,
+  navigationSpaceWatcher = navigationSpaceWatcher,
+  navigationRefreshTimer = navigationRefreshTimer,
+  closeFocusTimer = closeFocusTimer,
+}

@@ -1,9 +1,11 @@
 -- ~/.hammerspoon/space_hud.lua
--- Transient HUD that flashes near the bottom-center of the main screen:
+-- Space indicators:
+--   * a persistent menu bar item showing the current Mission Control space index
 --   * the current Mission Control space index on every space change
 --   * "⌘N" on cmd+1..9 keypresses (visual confirmation of the hotkey)
 
 local spaces = require("hs.spaces")
+local spaceState = require("space_state")
 
 local HUD_DURATION = 0.6
 local HUD_FADE_IN = 0.08
@@ -18,43 +20,26 @@ local HUD_BOTTOM_MARGIN = 80  -- gap between HUD bottom and screen bottom
 -- Vertical position of the text within the canvas; tweak by eye if it looks off.
 local HUD_TEXT_Y_OFFSET = -10
 
--- spaces.spacesForScreen() is an expensive IPC call. The list only changes when
--- the user adds/removes/reorders spaces, so cache it and refresh only when the
--- focused space ID isn't found (i.e. the cache is stale).
-local cachedSpaceIds = nil
-local cachedSpaceIdsUUID = nil
-
-local function findIndex(list, target)
-  if not list then return nil end
-  for i, s in ipairs(list) do
-    if s == target then return i end
-  end
-  return nil
+local function currentSpaceIndex()
+  local current = spaceState.currentSpace()
+  return current and current.index or nil
 end
 
-local function currentSpaceIndex()
-  local screen = hs.screen.mainScreen()
-  if not screen then return nil end
-  local uuid = screen:getUUID()
-  local focused = spaces.focusedSpace()
-  if not focused then return nil end
+local spaceMenubar = hs.menubar.new(true, "current-space-number")
 
-  if cachedSpaceIdsUUID ~= uuid or not cachedSpaceIds then
-    cachedSpaceIds = spaces.spacesForScreen(uuid)
-    cachedSpaceIdsUUID = uuid
-  end
-
-  local idx = findIndex(cachedSpaceIds, focused)
-  if idx then return idx end
-
-  -- Cache miss: spaces layout changed. Refresh and retry once.
-  cachedSpaceIds = spaces.spacesForScreen(uuid)
-  return findIndex(cachedSpaceIds, focused)
+local function updateMenubar(idx)
+  if not spaceMenubar then return end
+  local label = idx and tostring(idx) or "?"
+  spaceMenubar:setTitle(label)
+  spaceMenubar:setTooltip("Current Space: " .. label)
 end
 
 local hudCanvas = nil
-local hudHideTimer = nil
 local hudVisible = false
+local hudHideTimer = hs.timer.delayed.new(HUD_DURATION, function()
+  if hudCanvas then hudCanvas:hide(HUD_FADE_OUT) end
+  hudVisible = false
+end)
 
 local function ensureHudCanvas()
   if hudCanvas then return end
@@ -112,28 +97,57 @@ local function showHud(text, width)
     hudVisible = true
   end
 
-  if hudHideTimer then hudHideTimer:stop() end
-  hudHideTimer = hs.timer.doAfter(HUD_DURATION, function()
-    if hudCanvas then hudCanvas:hide(HUD_FADE_OUT) end
-    hudVisible = false
-  end)
+  hudHideTimer:start()
+end
+
+-- Event-tap callbacks run before macOS receives the event. Queue all canvas and
+-- menu-bar work onto the next run-loop turn so ctrl+digit is delivered first.
+local pendingHudText = nil
+local pendingHudWidth = nil
+local pendingMenubarIndex = nil
+local renderTimer = hs.timer.delayed.new(0, function()
+  if pendingMenubarIndex ~= nil then
+    updateMenubar(pendingMenubarIndex)
+    pendingMenubarIndex = nil
+  end
+  if pendingHudText ~= nil then
+    local text, width = pendingHudText, pendingHudWidth
+    pendingHudText, pendingHudWidth = nil, nil
+    showHud(text, width)
+  end
+end)
+
+local function queueHud(text, width, menubarIndex)
+  pendingHudText = text
+  pendingHudWidth = width
+  if menubarIndex ~= nil then pendingMenubarIndex = menubarIndex end
+  renderTimer:start()
 end
 
 -- When the eventtap below has just shown the HUD for a ctrl+digit press, the
--- spaces.watcher will fire moments later for the same switch. focusedSpace()
--- is a sync IPC call (5–200ms) and we already know what to display, so we
--- skip the watcher's lookup if a tap fired within this window.
+-- spaces.watcher will fire moments later for the same switch. Update the menu
+-- bar from the actual focused Space, but skip the duplicate HUD animation.
 local TAP_DEDUP_WINDOW = 0.4
 local lastTapTime = 0
+local canInformWindowFilter = spaces.screensHaveSeparateSpaces()
 
 local function now() return hs.timer.absoluteTime() / 1e9 end
 
+local verifyTimer = hs.timer.delayed.new(TAP_DEDUP_WINDOW + 0.05, function()
+  updateMenubar(currentSpaceIndex())
+end)
+
 local watcher = spaces.watcher.new(function()
+  -- For numbered switches the key tap already knows the destination. Avoid all
+  -- synchronous Spaces IPC while macOS is completing that transition.
   if now() - lastTapTime < TAP_DEDUP_WINDOW then return end
   local idx = currentSpaceIndex()
-  showHud(idx and tostring(idx) or "?")
+  queueHud(idx and tostring(idx) or "?", nil, idx or false)
 end)
 watcher:start()
+
+-- Populate the menu bar immediately instead of waiting for the first switch.
+updateMenubar(currentSpaceIndex())
 
 -- Non-consuming keyDown tap (macOS still receives the keystroke). Fires the
 -- HUD immediately on:
@@ -153,13 +167,27 @@ local hotkeyTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(
   local flags = event:getFlags()
 
   if flags.ctrl and not flags.cmd and not flags.alt and not flags.shift then
-    showHud(tostring(digit))
     lastTapTime = now()
+    -- This avoids repeated full window-filter discovery for already visited
+    -- numbered Spaces. The user's Mission Control auto-rearrange setting is off;
+    -- the API additionally requires Displays Have Separate Spaces to be on.
+    if canInformWindowFilter then
+      hs.window.filter.switchedToSpace(digit)
+    end
+    queueHud(tostring(digit), nil, digit)
+    verifyTimer:start()
   elseif flags.cmd and not flags.ctrl and not flags.alt and not flags.shift then
-    showHud("⌘" .. digit, HUD_WIDTH_CMD)
+    queueHud("⌘" .. digit, HUD_WIDTH_CMD)
   end
   return false
 end)
 hotkeyTap:start()
 
-return { watcher = watcher, hotkeyTap = hotkeyTap }
+return {
+  watcher = watcher,
+  hotkeyTap = hotkeyTap,
+  menubar = spaceMenubar,
+  renderTimer = renderTimer,
+  verifyTimer = verifyTimer,
+  hudHideTimer = hudHideTimer,
+}

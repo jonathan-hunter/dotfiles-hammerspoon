@@ -27,4 +27,4 @@ bindApp({'shift'}, 'A', "Google Gemini")
 bindApp({'shift'}, 'Z', "Zotero")
 bindApp({'shift'}, 'S', "Shortcuts")
 
-bindApp({'alt'}, 'C', "Antigravity IDE")
+-- bindApp({'alt'}, 'C', "Antigravity IDE")

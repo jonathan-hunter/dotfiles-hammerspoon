@@ -16,13 +16,32 @@ f19.isActive = false  -- tracks whether the hyper modal is currently active
 -- or the single-threaded Lua loop may be blocked when the release callback
 -- should run. Either way the modal stays active and plain keystrokes start
 -- firing hyper bindings. In the dropped-key-up case there is no release event
--- anywhere to react to, so the only reliable signal is elapsed time: nobody
--- holds the hyper key this long on purpose, so force-exit if they appear to.
+-- anywhere to react to, so the only reliable signal is elapsed time. The timer
+-- measures inactivity, not total hold time: every modal binding that fires
+-- restarts it (see the bind wrapper below), so a long deliberate hold -- e.g.
+-- repeated hjkl focus navigation -- never trips it, while a stuck modal
+-- force-exits 2s after the user stops pressing bound keys.
 local AUTO_EXIT_AFTER = 2.0  -- seconds
-local watchdog = nil
+local watchdog = hs.timer.delayed.new(AUTO_EXIT_AFTER, function()
+  if f19.isActive then
+    f19.isActive = false
+    f19:exit()
+    print("[hyperkey] watchdog force-exited a stuck modal")
+  end
+end)
 
 local function clearWatchdog()
-  if watchdog then watchdog:stop(); watchdog = nil end
+  watchdog:stop()
+end
+
+local function startWatchdog()
+  watchdog:start()
+end
+
+-- A modal binding firing is proof the user is deliberately holding hyper,
+-- so push the force-exit deadline back.
+local function petWatchdog()
+  if f19.isActive then startWatchdog() end
 end
 
 -- Centralised enter/exit so every F19 chord (plain, shift, alt, shift+alt)
@@ -30,15 +49,7 @@ end
 local function enterModal()
   f19.isActive = true
   f19:enter()
-  clearWatchdog()
-  watchdog = hs.timer.doAfter(AUTO_EXIT_AFTER, function()
-    watchdog = nil
-    if f19.isActive then
-      f19.isActive = false
-      f19:exit()
-      print("[hyperkey] watchdog force-exited a stuck modal")
-    end
-  end)
+  startWatchdog()
 end
 
 local function exitModal()
@@ -70,6 +81,21 @@ if f19KeyCode then
   releaseTap:start()
 end
 
+-- Wrap the modal's bind so every binding pets the watchdog when it fires.
+-- All keybind modules bind through this modal (it loads first and is exposed
+-- as a global), so they get this for free without changes.
+local rawBind = f19.bind
+function f19.bind(self, mods, key, pressedFn, releasedFn, repeatFn)
+  local function withPet(fn)
+    if not fn then return nil end
+    return function(...)
+      petWatchdog()
+      return fn(...)
+    end
+  end
+  return rawBind(self, mods, key, withPet(pressedFn), withPet(releasedFn), withPet(repeatFn))
+end
+
 -- Define keybinding function - bind hyper+key to launch/focus app
 local function bindApp(mods, key, app)
   f19:bind(mods, key, function()
@@ -83,4 +109,5 @@ return {
   modal = f19,
   bindApp = bindApp,
   releaseTap = releaseTap,
+  watchdog = watchdog,
 }

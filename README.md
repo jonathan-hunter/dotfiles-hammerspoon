@@ -7,7 +7,7 @@ A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) 
 - **Hyperkey Modal**: Caps Lock mapped to F19 acts as a pure modifier key — hold and press another key to trigger custom keybindings
 - **Application Launcher**: Quick launch/focus apps with single keystrokes
 - **Window Management**: Native tiling, vim-style focus navigation, and move-window-to-space
-- **Space HUD**: Transient on-screen indicator of the current Mission Control space
+- **Space Indicator**: Current Mission Control space number in the menu bar, plus a transient on-screen HUD when switching spaces
 - **Special Functions**: Config reload, screenshots, voice mode toggle
 
 ## Prerequisites
@@ -28,7 +28,8 @@ A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) 
 ├── keybind_finder.lua          # Custom Finder window handler
 ├── keybinds_window_mgmt.lua    # Tiling, focus navigation, move-to-space
 ├── keybinds_special.lua        # Special function keybindings
-└── space_hud.lua               # Transient HUD on Mission Control space change
+├── space_state.lua             # Shared cached Mission Control Space IDs
+└── space_hud.lua               # Persistent menu bar indicator and transient Space HUD
 ```
 
 ## Keybindings
@@ -74,7 +75,7 @@ Native Hammerspoon tiling — sets the focused window's frame to a fraction of t
 
 #### Move Window to Space (Hyper+Shift+1..9)
 
-Drags the focused window's titlebar to invoke macOS's ctrl+N space switch, sending the window to space N.
+Drags the focused window's titlebar while invoking macOS's ctrl+N shortcut, sending the window to Desktop N and following it. The drag uses non-blocking timers so Hammerspoon remains responsive throughout the switch.
 
 ### Special Functions
 
@@ -85,7 +86,15 @@ Drags the focused window's titlebar to invoke macOS's ctrl+N space switch, sendi
 
 ### Auto-Focus Behavior
 
-When a window is closed, the next visible window is automatically focused (with a 0.1s delay to ensure window list updates).
+When a window is closed and macOS has not selected a replacement, the next visible window is focused after a 0.1s delay. Directional navigation reuses a cached current-Space window list rather than querying every application on every keypress.
+
+### Mission Control Settings
+
+For numbered Space caching and consistent ctrl+N destinations:
+
+- Enable **Displays have separate Spaces**.
+- Disable **Automatically rearrange Spaces based on most recent use**.
+- Enabling **Reduce motion** is recommended for faster visual transitions.
 
 ## Configuration
 

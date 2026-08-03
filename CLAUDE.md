@@ -25,7 +25,8 @@ View the Hammerspoon console for errors: menu bar icon → Console
 - `keybinds_window_mgmt.lua` - Native Hammerspoon tiling, vim-style window focus (hjkl), and shift+hyper+1..9 to move focused window to space N
 - `keybinds_special.lua` - Config reload, paste as plain text, F13/F14 special keys
 - `keybind_finder.lua` - Custom Finder handling with AppleScript (opens new window if none exist)
-- `space_hud.lua` - Transient HUD that flashes the current Mission Control space index on space change
+- `space_state.lua` - Shared cached Space IDs for consistent Desktop/HUD numbering
+- `space_hud.lua` - Persistent menu bar indicator and transient HUD for the current Mission Control space index
 
 ## Adding Keybindings
 
@@ -45,3 +46,5 @@ end)
 ## Key Constants
 
 - `WINDOW_FOCUS_DELAY` in `keybinds_window_mgmt.lua` (0.1s) - delay after window close before auto-focus
+- `NAVIGATION_REFRESH_DELAY` in `keybinds_window_mgmt.lua` (0.12s) - coalesces window-list updates
+- `NAVIGATION_SPACE_REFRESH_DELAY` in `keybinds_window_mgmt.lua` (0.20s) - rebuilds navigation candidates after a Space transition
