@@ -1,8 +1,9 @@
 --[[
 ~/.hammerspoon/keybinds_window_mgmt.lua
 Window management keybindings using hyper key (Caps Lock mapped to F19).
-Native Hammerspoon tiling layout, vim-style focus navigation, and
-shift+hyper+1..9 to move the focused window to space N.
+Native Hammerspoon tiling layout, hyper+opt+1..4 one-shot multi-window
+layouts, vim-style focus navigation, and shift+hyper+1..9 to move the
+focused window to space N.
 ]]
 
 -- Configuration
@@ -13,19 +14,23 @@ local PADDING = 1
 local spaces = require("hs.spaces")
 hs.window.animationDuration = 0
 
--- Tile the focused window to a fractional rect of its screen, inset by PADDING px.
--- x, y, w, h are fractions in [0, 1] of the screen's usable frame.
+-- Set a window's frame to a fractional rect of a screen frame, inset by
+-- PADDING px. x, y, w, h are fractions in [0, 1] of the screen's usable frame.
+local function setTileFrame(win, f, x, y, w, h)
+  win:setFrame({
+    x = f.x + f.w * x + PADDING,
+    y = f.y + f.h * y + PADDING,
+    w = f.w * w - PADDING * 2,
+    h = f.h * h - PADDING * 2,
+  })
+end
+
+-- Tile the focused window to a fractional rect of its screen.
 local function tile(x, y, w, h)
   return function()
     local win = hs.window.focusedWindow()
     if not win then return end
-    local f = win:screen():frame()
-    win:setFrame({
-      x = f.x + f.w * x + PADDING,
-      y = f.y + f.h * y + PADDING,
-      w = f.w * w - PADDING * 2,
-      h = f.h * h - PADDING * 2,
-    })
+    setTileFrame(win, win:screen():frame(), x, y, w, h)
   end
 end
 
@@ -48,6 +53,55 @@ f19:bind({'shift'}, 'I', tile(0.5, 0,   0.5, 0.5))         -- top right quarter
 f19:bind({'shift'}, 'N', tile(0,   0.5, 0.5, 0.5))         -- bottom left quarter
 f19:bind({'shift'}, 'M', tile(0,   0.5, 1,   0.5))         -- bottom half
 f19:bind({'shift'}, ',', tile(0.5, 0.5, 0.5, 0.5))         -- bottom right quarter
+
+-- One-shot layouts: Hyper+Opt+1..4 arranges every standard window on the
+-- current Space (focused window's screen only) into a fixed pattern. Slot 1
+-- is the layout's hero position and always receives the focused window;
+-- the rest follow in stable id order. With fewer windows than slots the
+-- trailing slots stay empty; with more, assignment wraps around the pattern
+-- and the hero is raised last so it stays on top of any stack.
+local LAYOUTS = {
+  { {0, 0, 1, 1} },                                        -- 1: monocle
+  { {0, 0, 0.5, 1}, {0.5, 0, 0.5, 1} },                    -- 2: two columns
+  { {0.2, 0, 0.6, 1},                                      -- 3: ultrawide 1:3:1,
+    {0, 0, 0.2, 1}, {0.8, 0, 0.2, 1} },                    --    hero center
+  { {0, 0, 0.5, 0.5}, {0.5, 0, 0.5, 0.5},                  -- 4: 2x2 corners
+    {0, 0.5, 0.5, 0.5}, {0.5, 0.5, 0.5, 0.5} },
+}
+
+local function applyLayout(slots)
+  local focused = hs.window.focusedWindow()
+  local screen = focused and focused:screen() or hs.screen.mainScreen()
+  if not screen then return end
+  local screenId = screen:id()
+
+  local wins = {}
+  for _, win in ipairs(hs.window.orderedWindows()) do
+    if win:isStandard() and win:isVisible() and win:screen():id() == screenId then
+      wins[#wins + 1] = win
+    end
+  end
+  if #wins == 0 then return end
+
+  -- Hero first; without a focused standard window the lowest id leads.
+  local focusedId = focused and focused:id()
+  table.sort(wins, function(a, b)
+    if a:id() == focusedId then return true end
+    if b:id() == focusedId then return false end
+    return a:id() < b:id()
+  end)
+
+  local frame = screen:frame()
+  for i, win in ipairs(wins) do
+    local s = slots[((i - 1) % #slots) + 1]
+    setTileFrame(win, frame, s[1], s[2], s[3], s[4])
+  end
+  wins[1]:focus()
+end
+
+for i, slots in ipairs(LAYOUTS) do
+  f19:bind({'alt'}, tostring(i), function() applyLayout(slots) end)
+end
 
 -- Directional focus is called frequently while Hyper is held. Calling
 -- focusWindowWest/North/South/East without candidates makes Hammerspoon query
