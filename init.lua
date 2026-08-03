@@ -1,5 +1,7 @@
 -- ~/.hammerspoon/init.lua
 -- Version: 1.0
+require("hs.ipc")  -- IPC port for the `hs` command-line tool
+
 local hyperkey = require("hyperkey")  -- hyperkey logic
 
 -- Make hyperkey components globally available for other modules
@@ -12,4 +14,4 @@ require("keybinds_apps")          -- app keybinds
 require("keybind_finder")         -- finder launch/focus logic and keybind
 require("keybinds_window_mgmt")   -- window management: tiling, focus nav, move-to-space
 require("keybinds_special")       -- reload hammerspoon; screenshot; claude voice mode
-require("space_hud")              -- menu bar indicator and transient HUD for current space
+require("space_hud")              -- space HUD + menu bar taskbar (via space_taskbar)

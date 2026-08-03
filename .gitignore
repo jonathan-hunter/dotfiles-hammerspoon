@@ -1,2 +1,5 @@
 Spoons/
 **/.DS_Store
+
+# Compiled from helpers/windowlist.swift (space_taskbar.lua rebuilds it at load)
+helpers/windowlist

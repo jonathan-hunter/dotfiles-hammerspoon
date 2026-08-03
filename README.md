@@ -7,7 +7,7 @@ A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) 
 - **Hyperkey Modal**: Caps Lock mapped to F19 acts as a pure modifier key — hold and press another key to trigger custom keybindings
 - **Application Launcher**: Quick launch/focus apps with single keystrokes
 - **Window Management**: Native tiling, vim-style focus navigation, and move-window-to-space
-- **Space Indicator**: Current Mission Control space number in the menu bar, plus a transient on-screen HUD when switching spaces
+- **Space Taskbar**: Menu bar strip of app icons grouped by Desktop number, with the current Space highlighted, a click-to-jump dropdown, and a transient on-screen HUD when switching spaces
 - **Special Functions**: Config reload, screenshots, voice mode toggle
 
 ## Prerequisites
@@ -29,7 +29,9 @@ A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) 
 ├── keybinds_window_mgmt.lua    # Tiling, focus navigation, move-to-space
 ├── keybinds_special.lua        # Special function keybindings
 ├── space_state.lua             # Shared cached Mission Control Space IDs
-└── space_hud.lua               # Persistent menu bar indicator and transient Space HUD
+├── space_hud.lua               # Transient Space HUD; feeds the taskbar current-Space updates
+├── space_taskbar.lua           # Menu bar taskbar: app icons grouped by Space
+└── helpers/windowlist.swift    # CGWindowList helper (sees windows on all Spaces)
 ```
 
 ## Keybindings
@@ -95,6 +97,12 @@ For numbered Space caching and consistent ctrl+N destinations:
 - Enable **Displays have separate Spaces**.
 - Disable **Automatically rearrange Spaces based on most recent use**.
 - Enabling **Reduce motion** is recommended for faster visual transitions.
+
+### Space Taskbar
+
+The menu bar shows each numbered Desktop with the icons of the apps on it (capped at 4 per Space, `+n` for overflow), highlighting the current Space. Clicking it opens a dropdown listing every Desktop and its apps — select one to jump there via ctrl+N.
+
+Window-to-app mapping for Spaces you haven't visited comes from `helpers/windowlist`, a small Swift binary using `CGWindowListCopyWindowInfo` (the Accessibility API only sees the current Space). It is compiled automatically from `helpers/windowlist.swift` on config load if missing, and runs asynchronously — placement lookups and re-renders happen only on debounced window events, never during a Space transition.
 
 ## Configuration
 

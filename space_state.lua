@@ -80,6 +80,13 @@ local function currentSpace()
   }
 end
 
+-- Ordered user-Desktop Space IDs for a screen (defaults to the primary
+-- screen), using the same cache as currentSpace().
+local function userSpaces(screen, refresh)
+  local entry = cacheForScreen(screen or hs.screen.primaryScreen(), refresh)
+  return entry and entry.userIds or nil
+end
+
 local function invalidate(screen)
   local uuid = screenUUID(screen)
   if uuid then
@@ -98,6 +105,7 @@ screenWatcher:start()
 
 return {
   currentSpace = currentSpace,
+  userSpaces = userSpaces,
   invalidate = invalidate,
   screenWatcher = screenWatcher,
 }

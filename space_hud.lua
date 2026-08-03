@@ -1,11 +1,13 @@
 -- ~/.hammerspoon/space_hud.lua
 -- Space indicators:
---   * a persistent menu bar item showing the current Mission Control space index
 --   * the current Mission Control space index on every space change
 --   * "⌘N" on cmd+1..9 keypresses (visual confirmation of the hotkey)
+-- The persistent menu bar item lives in space_taskbar (app icons grouped by
+-- Space); this module feeds it current-Space updates via setCurrentIndex.
 
 local spaces = require("hs.spaces")
 local spaceState = require("space_state")
+local taskbar = require("space_taskbar")
 
 local HUD_DURATION = 0.6
 local HUD_FADE_IN = 0.08
@@ -25,13 +27,8 @@ local function currentSpaceIndex()
   return current and current.index or nil
 end
 
-local spaceMenubar = hs.menubar.new(true, "current-space-number")
-
 local function updateMenubar(idx)
-  if not spaceMenubar then return end
-  local label = idx and tostring(idx) or "?"
-  spaceMenubar:setTitle(label)
-  spaceMenubar:setTooltip("Current Space: " .. label)
+  taskbar.setCurrentIndex(idx)
 end
 
 local hudCanvas = nil
@@ -186,7 +183,6 @@ hotkeyTap:start()
 return {
   watcher = watcher,
   hotkeyTap = hotkeyTap,
-  menubar = spaceMenubar,
   renderTimer = renderTimer,
   verifyTimer = verifyTimer,
   hudHideTimer = hudHideTimer,

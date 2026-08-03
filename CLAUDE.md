@@ -26,7 +26,9 @@ View the Hammerspoon console for errors: menu bar icon → Console
 - `keybinds_special.lua` - Config reload, paste as plain text, F13/F14 special keys
 - `keybind_finder.lua` - Custom Finder handling with AppleScript (opens new window if none exist)
 - `space_state.lua` - Shared cached Space IDs for consistent Desktop/HUD numbering
-- `space_hud.lua` - Persistent menu bar indicator and transient HUD for the current Mission Control space index
+- `space_hud.lua` - Transient HUD for the current Mission Control space index; feeds current-Space updates to the taskbar
+- `space_taskbar.lua` - Menu bar taskbar: app icons grouped by Desktop with the current Space highlighted and a click-to-jump dropdown
+- `helpers/windowlist.swift` - CGWindowList helper that reports windows on all Spaces (AX only sees the current one); auto-compiled by `space_taskbar.lua` if the binary is missing
 
 ## Adding Keybindings
 
