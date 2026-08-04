@@ -137,13 +137,31 @@ local function currentSpaceWindowSet()
   return set
 end
 
+-- Electron apps (VS Code, Slack) build their accessibility tree lazily: the
+-- first AX window query after the app has been idle can return an empty list
+-- and merely triggers tree construction. Acting on that snapshot makes the
+-- binding conclude "no windows here" and hop away from -- or ignore -- a
+-- window that is right on this Space. When the query comes back empty,
+-- re-query once after a short delay before deciding.
+local AX_RETRY_DELAY = 0.15
+
+local function withStandardWindows(app, fn)
+  local wins = standardWindows(app, currentSpaceWindowSet())
+  if #wins > 0 then
+    fn(wins)
+    return
+  end
+  hs.timer.doAfter(AX_RETRY_DELAY, function()
+    fn(standardWindows(app, currentSpaceWindowSet()))
+  end)
+end
+
 -- Cycle the app's windows. With 2+ windows on the current Space, cycle among
 -- them. Otherwise hop to the next Desktop holding this app's windows (per the
 -- taskbar's model) via ctrl+N -- same mechanism as the HUD/taskbar, so the
 -- indicators stay in sync -- and focus the app's window there on arrival.
 -- Sync Spaces IPC only runs here, on an explicit keypress, never on a watcher.
-local function cycleAppWindows(app)
-  local wins = standardWindows(app, currentSpaceWindowSet())
+local function cycleAppWindowsIn(app, wins)
   if #wins >= 2 then
     local focused = app:focusedWindow()
     local focusedId = focused and focused:id()
@@ -187,8 +205,15 @@ local function cycleAppWindows(app)
   end
   hs.eventtap.keyStroke({ "ctrl" }, tostring(target), 0)
   hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
-    local arrived = standardWindows(app, currentSpaceWindowSet())
-    if arrived[1] then arrived[1]:focus() end
+    withStandardWindows(app, function(arrived)
+      if arrived[1] then arrived[1]:focus() end
+    end)
+  end)
+end
+
+local function cycleAppWindows(app)
+  withStandardWindows(app, function(wins)
+    cycleAppWindowsIn(app, wins)
   end)
 end
 
@@ -207,9 +232,10 @@ local function bindApp(mods, key, app)
     hs.application.launchOrFocus(app)
     hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
       local activated = frontmostIfMatches(app)
-      if activated and #standardWindows(activated, currentSpaceWindowSet()) == 0 then
-        cycleAppWindows(activated)
-      end
+      if not activated then return end
+      withStandardWindows(activated, function(wins)
+        if #wins == 0 then cycleAppWindowsIn(activated, wins) end
+      end)
     end)
   end)
 end
