@@ -199,12 +199,26 @@ local function rebuildModel()
     helperTask = hs.task.new(HELPER_BIN, function(exitCode, stdOut)
       helperTask = nil
       if exitCode == 0 and stdOut then
+        local reported = {}
         for id, bundle, name in stdOut:gmatch("(%d+)\t([^\t\n]+)\t([^\n]+)") do
           local wid = tonumber(id)
           if wid then
+            reported[wid] = true
             windowApps[wid] = bundle
             if not appNames[bundle] then appNames[bundle] = name end
           end
+        end
+        -- Prune windows the helper no longer reports: Electron apps hide
+        -- their window on close instead of destroying it, so windowDestroyed
+        -- never fires and a stale entry would keep the app's icon alive.
+        -- Keep anything AX still sees so a window created after the helper
+        -- snapshot doesn't flicker out.
+        for _, win in ipairs(hs.window.orderedWindows()) do
+          local ok, id = pcall(win.id, win)
+          if ok and id then reported[id] = true end
+        end
+        for wid in pairs(windowApps) do
+          if not reported[wid] then windowApps[wid] = nil end
         end
         placeAndRender()
       end

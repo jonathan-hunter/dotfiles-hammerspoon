@@ -9,6 +9,33 @@
 
 import AppKit
 import CoreGraphics
+import Darwin
+
+// Electron apps (Slack, Claude, …) hide their window on close instead of
+// destroying it, and CGWindowList still reports it with normal bounds and
+// alpha — kCGWindowIsOnscreen can't tell it apart from a visible window on
+// an inactive Space. The window server's ordered-in flag can: hidden
+// (ordered-out) windows read false, visible windows on any Space read true.
+// SkyLight is private, so resolve it at runtime and fail open (treat every
+// window as ordered in) if the symbols ever vanish.
+typealias MainConnFn = @convention(c) () -> Int32
+typealias OrderedInFn = @convention(c) (Int32, UInt32, UnsafeMutablePointer<Bool>) -> Int32
+
+var connID: Int32 = 0
+var orderedInFn: OrderedInFn? = nil
+if let handle = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW),
+   let cidSym = dlsym(handle, "SLSMainConnectionID"),
+   let ordSym = dlsym(handle, "SLSWindowIsOrderedIn") {
+    connID = unsafeBitCast(cidSym, to: MainConnFn.self)()
+    orderedInFn = unsafeBitCast(ordSym, to: OrderedInFn.self)
+}
+
+func isOrderedIn(_ windowID: Int) -> Bool {
+    guard let fn = orderedInFn else { return true }
+    var ordered = false
+    guard fn(connID, UInt32(windowID), &ordered) == 0 else { return true }
+    return ordered
+}
 
 guard let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
     exit(1)
@@ -22,7 +49,8 @@ for info in list {
           let pid = info[kCGWindowOwnerPID as String] as? Int,
           let bounds = info[kCGWindowBounds as String] as? [String: Any],
           let width = bounds["Width"] as? Double, width >= 100,
-          let height = bounds["Height"] as? Double, height >= 50 else { continue }
+          let height = bounds["Height"] as? Double, height >= 50,
+          isOrderedIn(number) else { continue }
 
     let entry: (bundle: String, name: String)?
     if let cached = byPID[pid] {

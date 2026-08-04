@@ -28,7 +28,7 @@ View the Hammerspoon console for errors: menu bar icon → Console
 - `space_state.lua` - Shared cached Space IDs for consistent Desktop/HUD numbering
 - `space_hud.lua` - Transient HUD for the current Mission Control space index; feeds current-Space updates to the taskbar
 - `space_taskbar.lua` - Menu bar taskbar: app icons grouped by Desktop with the current Space highlighted and a click-to-jump dropdown
-- `helpers/windowlist.swift` - CGWindowList helper that reports windows on all Spaces (AX only sees the current one); auto-compiled by `space_taskbar.lua` if the binary is missing
+- `helpers/windowlist.swift` - CGWindowList helper that reports windows on all Spaces (AX only sees the current one); skips ordered-out windows via SkyLight's `SLSWindowIsOrderedIn` so closed-to-background Electron windows (Slack/Claude hide on close, never destroy) don't appear; auto-compiled by `space_taskbar.lua` if the binary is missing — **recompile manually after editing** (`swiftc -O -o helpers/windowlist helpers/windowlist.swift`), auto-compile only fires when the binary is absent
 
 ## Adding Keybindings
 
