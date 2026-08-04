@@ -149,19 +149,29 @@ end
 
 -- Place every known window via SkyLight and re-render. Costs one
 -- windowsForSpace call per Desktop, so it only runs from debounced timers.
+-- A window reported on more than one Desktop is sticky -- e.g. a Meet
+-- picture-in-picture pop-out, which joins all Spaces -- and says nothing
+-- about where its app actually lives, so it is excluded from every group.
 local function placeAndRender()
   local userIds = spaceState.userSpaces()
-  local rebuilt = {}
+  local perSpace, spaceCount = {}, {}
   for i, spaceId in ipairs(userIds or {}) do
     local ok, wins = pcall(spaces.windowsForSpace, spaceId)
+    wins = (ok and type(wins) == "table") and wins or {}
+    perSpace[i] = wins
+    for _, wid in ipairs(wins) do
+      spaceCount[wid] = (spaceCount[wid] or 0) + 1
+    end
+  end
+
+  local rebuilt = {}
+  for i, wins in ipairs(perSpace) do
     local bundles, seen = {}, {}
-    if ok and type(wins) == "table" then
-      for _, wid in ipairs(wins) do
-        local bundle = windowApps[wid]
-        if bundle and not seen[bundle] then
-          seen[bundle] = true
-          bundles[#bundles + 1] = bundle
-        end
+    for _, wid in ipairs(wins) do
+      local bundle = spaceCount[wid] == 1 and windowApps[wid] or nil
+      if bundle and not seen[bundle] then
+        seen[bundle] = true
+        bundles[#bundles + 1] = bundle
       end
     end
     rebuilt[i] = { bundles = bundles }
