@@ -180,17 +180,46 @@ local function switchToSpaceNumber(n)
   hs.eventtap.keyStroke({"ctrl"}, tostring(n), 0)
 end
 
+-- Distance left of the zoom button's leading edge to the midpoint of the gap
+-- separating it from the minimize button, used only when AX will not report
+-- the minimize button. macOS 26 spaces the traffic lights 23px apart with 16px
+-- rects, so the gap is 7px wide and its midpoint sits 3.5px left of zoom.
+local ZOOM_TO_GAP_MIDPOINT = 3.5
+
+-- The minimize (yellow) button's rect, or nil if AX does not expose it.
+-- hs.window only surfaces zoomButtonRect(), so go through the AX element.
+local function minimizeButtonRect(win)
+  local ax = hs.axuielement.windowElement(win)
+  local btn = ax and ax:attributeValue("AXMinimizeButton")
+  if not btn then return nil end
+  local pos, size = btn:attributeValue("AXPosition"), btn:attributeValue("AXSize")
+  if not (pos and size) then return nil end
+  return { x = pos.x, y = pos.y, w = size.w, h = size.h }
+end
+
 local function moveWinToSpaceByDrag(win, n)
-  -- Anchor a few pixels above the minimize (yellow) button. That strip is
-  -- empty draggable titlebar on every standard macOS window, including apps
-  -- like Brave and Slack whose own UI crowds the area right of the zoom button.
-  local pt = win:zoomButtonRect()
+  -- Anchor in the gap between the minimize (yellow) and zoom (green) buttons,
+  -- level with their centres. Every standard macOS window has that gap, it is
+  -- plain draggable titlebar, and it dodges both the app chrome crowding the
+  -- area right of the zoom button (Brave's sidebar toggle, Slack's history
+  -- buttons) and the window's top resize border. Anchoring a few px *above*
+  -- the button row instead only clears the resize border where the titlebar is
+  -- tall: Ghostty leaves 12px above the buttons and Claude 16px, but Brave with
+  -- vertical tabs leaves roughly 9px, which put the press about 4px inside the
+  -- frame edge -- close enough to the resize border to explain why the drag
+  -- never started there and the window stayed behind on the Space switch.
+  local zoom = win:zoomButtonRect()
   -- nil for windows without a zoom button (dialogs, palettes, some Electron
   -- windows); bail rather than error -- and crucially, bail before posting
   -- the mouse-down, which would otherwise leave a stuck virtual drag.
-  if not pt then return end
-  pt.x = pt.x + pt.w / 2 - 20
-  pt.y = pt.y - 5
+  if not zoom then return end
+  local pt = { x = zoom.x - ZOOM_TO_GAP_MIDPOINT, y = zoom.y + zoom.h / 2 }
+  -- Prefer the measured gap over the constant; guard against a layout that
+  -- does not put minimize to the left of zoom, which would aim off into space.
+  local minimize = minimizeButtonRect(win)
+  if minimize and minimize.x + minimize.w <= zoom.x then
+    pt.x = (minimize.x + minimize.w + zoom.x) / 2
+  end
   local orig = hs.mouse.absolutePosition()
 
   hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseDown, pt):post()

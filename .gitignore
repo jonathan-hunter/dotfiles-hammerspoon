@@ -4,3 +4,6 @@ Spoons/
 
 # Compiled from helpers/windowlist.swift (space_taskbar.lua rebuilds it at load)
 helpers/windowlist
+
+# Pre-push security review notes; quotes the private Meet code verbatim
+DO_NOT_PUSH.md
