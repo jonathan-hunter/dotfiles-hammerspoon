@@ -1,6 +1,8 @@
 -- ~/.hammerspoon/space_taskbar.lua
 -- Menu bar taskbar: real app icons grouped by Mission Control Desktop, with
--- the current Space highlighted and a click-to-jump dropdown menu.
+-- the current Space highlighted. Clicking acts directly on whatever is under
+-- the pointer -- an app icon switches to its Desktop and focuses that app,
+-- the rest of a group just switches to the Desktop -- so there is no menu.
 --
 -- Two data sources drive rendering:
 --   * a windowID -> app map. AX (hs.window) only sees windows on the current
@@ -27,14 +29,14 @@ local NUMBER_TEXT_SIZE = 14   -- matches the menu bar clock
 local NUMBER_FONT = ".AppleSystemUIFont"
 local GROUP_GAP = 7
 local EDGE_PAD = 3
-local MAX_ICONS_PER_SPACE = 4     -- overflow renders as "+n"; the menu shows all
+local MAX_ICONS_PER_SPACE = 4     -- overflow renders as an unclickable "+n"
 
 local windowApps = {}   -- windowID -> bundleID
-local appNames = {}     -- bundleID -> display name
+local appNames = {}     -- bundleID -> display name (tooltip only)
 local iconCache = {}    -- bundleID -> hs.image (false = known missing)
-local menuIconCache = {}
 local model = {}        -- array indexed by Desktop number: { bundles = {...} }
 local currentIndex = nil
+local barWidth = 0      -- width of the last rendered strip, for click hit-testing
 
 local spaceMenubar = hs.menubar.new(true, "space-taskbar")
 local barCanvas = hs.canvas.new({ x = 0, y = 0, w = 10, h = BAR_HEIGHT })
@@ -44,16 +46,6 @@ local function appIcon(bundle)
   if icon == nil then
     icon = hs.image.imageFromAppBundle(bundle) or false
     iconCache[bundle] = icon
-  end
-  return icon or nil
-end
-
-local function menuIcon(bundle)
-  local icon = menuIconCache[bundle]
-  if icon == nil then
-    local base = appIcon(bundle)
-    icon = base and base:copy():setSize({ w = 16, h = 16 }) or false
-    menuIconCache[bundle] = icon
   end
   return icon or nil
 end
@@ -78,6 +70,7 @@ end
 local function render()
   if not spaceMenubar then return end
   if #model == 0 then
+    barWidth = 0
     spaceMenubar:setIcon(nil)
     spaceMenubar:setTitle(currentIndex and tostring(currentIndex) or "?")
     return
@@ -98,6 +91,7 @@ local function render()
     x = x + w + GROUP_GAP
   end
   local totalWidth = x - GROUP_GAP + EDGE_PAD
+  barWidth = totalWidth
 
   local elements = {}
   for i, group in ipairs(model) do
@@ -144,7 +138,17 @@ local function render()
     spaceMenubar:setTitle(nil)
     spaceMenubar:setIcon(img, false)
   end
-  spaceMenubar:setTooltip(currentIndex and ("Current Space: " .. currentIndex) or "Spaces")
+  -- The tooltip carries the app names the removed dropdown used to spell out.
+  local tooltip = "Spaces"
+  if currentIndex then
+    tooltip = "Current Space: " .. currentIndex
+    local names = {}
+    for _, bundle in ipairs(model[currentIndex] and model[currentIndex].bundles or {}) do
+      names[#names + 1] = appNames[bundle] or bundle
+    end
+    if #names > 0 then tooltip = tooltip .. " (" .. table.concat(names, ", ") .. ")" end
+  end
+  spaceMenubar:setTooltip(tooltip)
 end
 
 -- Place every known window via SkyLight and re-render. Costs one
@@ -246,36 +250,107 @@ if not helperAvailable and hs.fs.attributes(HELPER_SRC, "mode") == "file" then
   compileTask:start()
 end
 
-local function switchToSpace(n)
-  if n >= 1 and n <= 9 then
-    hs.eventtap.keyStroke({ "ctrl" }, tostring(n), 0)
-  end
-end
+-- Clicking ------------------------------------------------------------------
 
-spaceMenubar:setMenu(function()
-  local items = {}
+-- Delay before focusing a window after a ctrl+N Space switch: AX needs the
+-- transition to settle before the destination Desktop's windows are reachable.
+local SPACE_FOCUS_DELAY = 0.30
+-- Electron apps build their accessibility tree lazily and can answer the first
+-- query after an idle period with an empty list; re-ask once before giving up.
+local AX_RETRY_DELAY = 0.15
+
+-- Map an absolute mouse x onto the rendered strip. render() records where it
+-- drew each group and how many icons fitted, so the offset maps straight back
+-- to a Desktop and, when the click landed on an icon, that icon's bundle ID.
+-- The status item pads the image it is handed, so the left inset is measured
+-- from the live frame rather than assumed.
+local function hitTest(mouseX)
+  if barWidth <= 0 then return nil end
+  local frame = spaceMenubar and spaceMenubar:frame()
+  if not frame then return nil end
+  local x = mouseX - frame.x - (frame.w - barWidth) / 2
+
   for i, group in ipairs(model) do
-    if i > 1 then items[#items + 1] = { title = "-" } end
-    items[#items + 1] = {
-      title = "Desktop " .. i,
-      checked = (i == currentIndex),
-      disabled = (i > 9),
-      fn = function() switchToSpace(i) end,
-    }
-    for _, bundle in ipairs(group.bundles) do
-      items[#items + 1] = {
-        title = appNames[bundle] or bundle,
-        image = menuIcon(bundle),
-        indent = 1,
-        disabled = (i > 9),
-        fn = function() switchToSpace(i) end,
-      }
+    if group._x and x >= group._x - GROUP_GAP / 2
+        and x < group._x + group._w + GROUP_GAP / 2 then
+      local ix = group._x + NUMBER_WIDTH
+      for s = 1, (group._shown or 0) do
+        if x >= ix and x < ix + ICON_SIZE + ICON_GAP then
+          return i, group.bundles[s]
+        end
+        ix = ix + ICON_SIZE + ICON_GAP
+      end
+      return i  -- the number, or the "+n" overflow: Desktop only
     end
   end
-  if #items == 0 then
-    items[1] = { title = "No Space data yet", disabled = true }
+  return nil
+end
+
+-- The app's standard, non-minimized windows on Desktop `index`, frontmost
+-- first. AX reports an app's windows on every Space, so it is the Desktop's
+-- SkyLight window-id set that confines the result to the one clicked.
+local function appWindowsOnSpace(bundle, index)
+  local app = hs.application.get(bundle)
+  if not app then return nil, {} end
+
+  local userIds = spaceState.userSpaces()
+  local spaceId = userIds and userIds[index]
+  local onSpace = nil
+  if spaceId then
+    local ok, wins = pcall(spaces.windowsForSpace, spaceId)
+    if ok and type(wins) == "table" then
+      onSpace = {}
+      for _, wid in ipairs(wins) do onSpace[wid] = true end
+    end
   end
-  return items
+
+  local found = {}
+  for _, win in ipairs(app:allWindows()) do
+    local ok, id = pcall(win.id, win)
+    if ok and id and (not onSpace or onSpace[id])
+        and win:isStandard() and not win:isMinimized() then
+      found[#found + 1] = win
+    end
+  end
+  return app, found
+end
+
+local function focusAppOnSpace(bundle, index)
+  local app, wins = appWindowsOnSpace(bundle, index)
+  if not app then return end
+  if wins[1] then
+    wins[1]:focus()
+    return
+  end
+  hs.timer.doAfter(AX_RETRY_DELAY, function()
+    local retryApp, retryWins = appWindowsOnSpace(bundle, index)
+    if retryWins[1] then
+      retryWins[1]:focus()
+    elseif retryApp then
+      retryApp:activate()  -- windows unreachable; at least raise the app
+    end
+  end)
+end
+
+spaceMenubar:setClickCallback(function()
+  local pos = hs.mouse.absolutePosition()
+  if not pos then return end
+  local index, bundle = hitTest(pos.x)
+  if not index then return end
+
+  local cur = spaceState.currentSpace()
+  if cur and cur.index == index then
+    if bundle then focusAppOnSpace(bundle, index) end
+    return
+  end
+  if index > 9 then return end  -- ctrl+N only addresses the first nine Desktops
+
+  hs.eventtap.keyStroke({ "ctrl" }, tostring(index), 0)
+  if bundle then
+    hs.timer.doAfter(SPACE_FOCUS_DELAY, function()
+      focusAppOnSpace(bundle, index)
+    end)
+  end
 end)
 
 -- Called by space_hud whenever the current Space index changes (tap fast-path,
@@ -319,6 +394,8 @@ return {
   setCurrentIndex = setCurrentIndex,
   refresh = rebuildModel,
   getModel = function() return model end,
+  -- exported for programmatic testing of click targeting via the hs IPC CLI
+  hitTest = hitTest,
   -- keeps the in-flight hs.task objects reachable so they aren't collected
   getTasks = function() return helperTask, compileTask end,
   menubar = spaceMenubar,

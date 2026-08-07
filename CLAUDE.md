@@ -27,7 +27,7 @@ View the Hammerspoon console for errors: menu bar icon → Console
 - `keybind_finder.lua` - Custom Finder handling with AppleScript (opens new window if none exist)
 - `space_state.lua` - Shared cached Space IDs for consistent Desktop/HUD numbering
 - `space_hud.lua` - Transient HUD for the current Mission Control space index; feeds current-Space updates to the taskbar
-- `space_taskbar.lua` - Menu bar taskbar: app icons grouped by Desktop with the current Space highlighted and a click-to-jump dropdown
+- `space_taskbar.lua` - Menu bar taskbar: app icons grouped by Desktop with the current Space highlighted. No dropdown — clicks act directly, hit-tested against the rendered strip: an app icon switches to that Desktop and focuses that app's window there, the Desktop number (or the `+n` overflow) just switches Space
 - `helpers/windowlist.swift` - CGWindowList helper that reports windows on all Spaces (AX only sees the current one); skips ordered-out windows via SkyLight's `SLSWindowIsOrderedIn` so closed-to-background Electron windows (Slack/Claude hide on close, never destroy) don't appear; auto-compiled by `space_taskbar.lua` if the binary is missing — **recompile manually after editing** (`swiftc -O -o helpers/windowlist helpers/windowlist.swift`), auto-compile only fires when the binary is absent
 
 ## Adding Keybindings
@@ -50,3 +50,4 @@ end)
 - `WINDOW_FOCUS_DELAY` in `keybinds_window_mgmt.lua` (0.1s) - delay after window close before auto-focus
 - `NAVIGATION_REFRESH_DELAY` in `keybinds_window_mgmt.lua` (0.12s) - coalesces window-list updates
 - `NAVIGATION_SPACE_REFRESH_DELAY` in `keybinds_window_mgmt.lua` (0.20s) - rebuilds navigation candidates after a Space transition
+- `SPACE_FOCUS_DELAY` in `space_taskbar.lua` (0.30s) - lets a taskbar-click Space switch settle before AX focuses the clicked app (mirrors `CYCLE_SPACE_FOCUS_DELAY` in `hyperkey.lua`)
