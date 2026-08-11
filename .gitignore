@@ -5,5 +5,9 @@ Spoons/
 # Compiled from helpers/windowlist.swift (space_taskbar.lua rebuilds it at load)
 helpers/windowlist
 
-# Pre-push security review notes; quotes the private Meet code verbatim
+# Local-only working notes (todo.md, DO_NOT_PUSH.md). Never committed: the
+# security review quotes the private Meet room code verbatim.
+.jeh-local/
+
+# Belt-and-braces for that review specifically, wherever it ends up
 DO_NOT_PUSH.md
