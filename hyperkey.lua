@@ -96,6 +96,17 @@ function f19.bind(self, mods, key, pressedFn, releasedFn, repeatFn)
   return rawBind(self, mods, key, withPet(pressedFn), withPet(releasedFn), withPet(repeatFn))
 end
 
+-- launchOrFocus() hands its argument to LaunchServices, which resolves it as a
+-- filename. A name carrying a dot ("Brain.fm") is read as an already-extensioned
+-- file, so the lookup never falls through to Brain.fm.app and the call silently
+-- returns false. Retrying with an explicit .app suffix resolves it. Bindings keep
+-- passing the display name so frontmostIfMatches() below still matches.
+local function launchOrFocus(app)
+  if hs.application.launchOrFocus(app) then return true end
+  if app:match("%.app$") then return false end
+  return hs.application.launchOrFocus(app .. ".app")
+end
+
 -- launchOrFocus() resolves its argument against the app bundle's filename,
 -- but some apps run under a different process name (Visual Studio Code.app
 -- runs as "Code"; WhatsApp's name carries an invisible directional mark), so
@@ -217,11 +228,41 @@ local function cycleAppWindows(app)
   end)
 end
 
+-- What still needs doing once a launch/focus has been issued:
+--   * frontmost with a window here          -- nothing to do
+--   * frontmost with no window on this Space -- macOS does not follow the app to
+--     its Space, so hop to it
+--   * running but still in the background   -- accessory apps (Brain.fm runs
+--     with no dock icon) do not come forward from launchOrFocus() at all, and a
+--     repeat launchOrFocus() does not either; activate() does, and also makes
+--     them open their window
+-- A cold Electron start can take a couple of seconds to register with the OS,
+-- so poll a few times before concluding the launch went nowhere.
+local LAUNCH_SETTLE_RETRIES = 8
+
+local function settleAfterLaunch(appName, tries)
+  local front = frontmostIfMatches(appName)
+  if front then
+    withStandardWindows(front, function(wins)
+      if #wins == 0 then cycleAppWindowsIn(front, wins) end
+    end)
+    return
+  end
+  local running = hs.application.get(appName)
+  if running then
+    running:activate(true)
+    return
+  end
+  if tries > 0 then
+    hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
+      settleAfterLaunch(appName, tries - 1)
+    end)
+  end
+end
+
 -- Define keybinding function - bind hyper+key to launch/focus app.
 -- Pressing the key again while the app is already frontmost cycles/hops
--- through its windows instead of being a no-op. After a plain launch/focus,
--- if the app activated without a window on this Space (macOS does not follow
--- the app to its Space), hop to it.
+-- through its windows instead of being a no-op.
 local function bindApp(mods, key, app)
   f19:bind(mods, key, function()
     local front = frontmostIfMatches(app)
@@ -229,13 +270,9 @@ local function bindApp(mods, key, app)
       cycleAppWindows(front)
       return
     end
-    hs.application.launchOrFocus(app)
+    launchOrFocus(app)
     hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
-      local activated = frontmostIfMatches(app)
-      if not activated then return end
-      withStandardWindows(activated, function(wins)
-        if #wins == 0 then cycleAppWindowsIn(activated, wins) end
-      end)
+      settleAfterLaunch(app, LAUNCH_SETTLE_RETRIES)
     end)
   end)
 end
