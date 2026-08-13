@@ -12,19 +12,23 @@
 -- when it returns -- an item with no title still occupies the bar, so the
 -- failure looks like an invisible indicator rather than a missing one.
 
--- Flat monochrome cup matching the system tray icons: the SF Symbol
--- cup.and.saucer.fill, pre-rendered by helpers/coffee-icon.swift because
--- hs.image cannot resolve symbol names itself. Set as a template image so
--- macOS tints it for the light/dark menu bar and inverts it while clicked.
-local ICON_PATH = hs.configdir .. "/assets/coffee-template.png"
-local ICON_SIZE = { w = 24, h = 17 }   -- points; the PNG is that at 2x
+-- Active-state indicator: the SF Symbol cup.and.saucer.fill knocked out of a
+-- filled blue pill, pre-rendered by helpers/coffee-icon.swift because hs.image
+-- cannot resolve symbol names itself. The cup is a transparent hole, so it
+-- picks up the menu bar behind it the way a highlighted menu bar item does.
+--
+-- This is a colour image, NOT a template: template images are flattened to a
+-- single tint, which would throw the blue away. Hence template(false) and the
+-- explicit false to setIcon(), whose template argument otherwise defaults true.
+local ICON_PATH = hs.configdir .. "/assets/coffee-active.png"
+local ICON_SIZE = { w = 28, h = 20 }   -- points; the PNG is that at 2x
 local MENUBAR_TITLE = "☕"             -- fallback if the asset is missing
 local MENUBAR_TOOLTIP = "caffeinate -s active — click to allow sleep"
 
 local function coffeeIcon()
   local icon = hs.image.imageFromPath(ICON_PATH)
   if not icon then return nil end
-  return icon:setSize(ICON_SIZE):template(true)
+  return icon:setSize(ICON_SIZE):template(false)
 end
 
 local caffeineTask = nil
@@ -38,7 +42,7 @@ local function showIndicator(active)
     if not caffeineMenubar then return end
     local icon = coffeeIcon()
     if icon then
-      caffeineMenubar:setIcon(icon)
+      caffeineMenubar:setIcon(icon, false)
     else
       caffeineMenubar:setTitle(MENUBAR_TITLE)
     end

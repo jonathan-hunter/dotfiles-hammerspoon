@@ -84,7 +84,7 @@ Drags the focused window's titlebar while invoking macOS's ctrl+N shortcut, send
 ### Special Functions
 
 - `Hyper+Shift+R` - Reload Hammerspoon config
-- `Hyper+Opt+C` - Toggle `caffeinate -s` (keep the system awake). A coffee cup appears in the menu bar while it is active; clicking it also switches it off. The child process is terminated on config reload and on quit. Note that `-s` is only honoured on AC power — on battery the assertion is held but has no effect.
+- `Hyper+Opt+C` - Toggle `caffeinate -s` (keep the system awake). A highlighted coffee cup appears in the menu bar while it is active — the cup is knocked out of a filled blue pill, so it reads as "on" at a glance; clicking it also switches it off. The child process is terminated on config reload and on quit. Note that `-s` is only honoured on AC power — on battery the assertion is held but has no effect.
 - `Cmd+Shift+V` - Paste as plain text (preserves original clipboard)
 - `F13` - Screenshot to clipboard (⌘⇧4)
 - `F14` - Toggle Caps Lock (for Claude voice mode)
