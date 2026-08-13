@@ -24,6 +24,7 @@ View the Hammerspoon console for errors: menu bar icon → Console
 - `keybinds_apps.lua` - Application launch/focus bindings using `bindApp()`
 - `keybinds_window_mgmt.lua` - Native Hammerspoon tiling, hyper+opt+1..4 one-shot layouts (monocle / two columns / 1:3:1 / 2x2) for all windows on the current Space, vim-style window focus (hjkl), and shift+hyper+1..9 to move focused window to space N
 - `keybinds_special.lua` - Config reload, paste as plain text, F13/F14 special keys, Hyper+Shift+Opt+Q quit-all-apps Shortcut
+- `keybinds_caffeine.lua` - Hyper+Opt+C toggles a `caffeinate -s` child process, shown as a ☕ menu bar item while active. The task's exit callback is the only place that clears state, so an externally killed process still deactivates the indicator. Owns `hs.shutdownCallback` to avoid leaking the child across a reload
 - `keybind_finder.lua` - Custom Finder handling with AppleScript (opens new window if none exist)
 - `space_state.lua` - Shared cached Space IDs for consistent Desktop/HUD numbering
 - `space_hud.lua` - Transient HUD for the current Mission Control space index; feeds current-Space updates to the taskbar

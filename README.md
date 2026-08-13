@@ -84,6 +84,7 @@ Drags the focused window's titlebar while invoking macOS's ctrl+N shortcut, send
 ### Special Functions
 
 - `Hyper+Shift+R` - Reload Hammerspoon config
+- `Hyper+Opt+C` - Toggle `caffeinate -s` (keep the system awake). A ☕ appears in the menu bar while it is active; clicking it also switches it off. The child process is terminated on config reload and on quit.
 - `Cmd+Shift+V` - Paste as plain text (preserves original clipboard)
 - `F13` - Screenshot to clipboard (⌘⇧4)
 - `F14` - Toggle Caps Lock (for Claude voice mode)

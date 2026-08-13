@@ -14,4 +14,5 @@ require("keybinds_apps")          -- app keybinds
 require("keybind_finder")         -- finder launch/focus logic and keybind
 require("keybinds_window_mgmt")   -- window management: tiling, focus nav, move-to-space
 require("keybinds_special")       -- reload hammerspoon; screenshot; claude voice mode
+require("keybinds_caffeine")      -- Hyper+Opt+C: toggle `caffeinate -s` + menu bar coffee cup
 require("space_hud")              -- space HUD + menu bar taskbar (via space_taskbar)
