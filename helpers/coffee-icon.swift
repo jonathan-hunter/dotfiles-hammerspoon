@@ -12,7 +12,7 @@
 // flatten the fill to a monochrome tint.
 //
 // Regenerate with:
-//   swift helpers/coffee-icon.swift cup.and.saucer.fill 0.00 0.48 1.00 2 assets/coffee-active.png
+//   swift helpers/coffee-icon.swift cup.and.saucer.fill 0.00 0.80 1.00 2 assets/coffee-active.png
 //
 // Args: <symbol> <r> <g> <b> <scale> <out.png>, colour components 0..1.
 import AppKit
