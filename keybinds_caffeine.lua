@@ -5,24 +5,48 @@
 -- The assertion lives with the child process, so there is nothing to clean up
 -- beyond terminating it: the task's exit callback is the single place that
 -- clears state, whether we killed it or something else did.
+--
+-- The menu bar item is created on activation and deleted on deactivation
+-- rather than parked with removeFromMenuBar(). Detaching destroys the
+-- underlying status item, and a title set on a detached item is silently lost
+-- when it returns -- an item with no title still occupies the bar, so the
+-- failure looks like an invisible indicator rather than a missing one.
 
-local MENUBAR_TITLE = "☕"
+-- Flat monochrome cup matching the system tray icons: the SF Symbol
+-- cup.and.saucer.fill, pre-rendered by helpers/coffee-icon.swift because
+-- hs.image cannot resolve symbol names itself. Set as a template image so
+-- macOS tints it for the light/dark menu bar and inverts it while clicked.
+local ICON_PATH = hs.configdir .. "/assets/coffee-template.png"
+local ICON_SIZE = { w = 24, h = 17 }   -- points; the PNG is that at 2x
+local MENUBAR_TITLE = "☕"             -- fallback if the asset is missing
+local MENUBAR_TOOLTIP = "caffeinate -s active — click to allow sleep"
 
-local caffeineTask = nil
-local caffeineMenubar = hs.menubar.new(true, "caffeine")
-
-if caffeineMenubar then
-  caffeineMenubar:removeFromMenuBar()
-  caffeineMenubar:setTitle(MENUBAR_TITLE)
-  caffeineMenubar:setTooltip("caffeinate -s active — click to allow sleep")
+local function coffeeIcon()
+  local icon = hs.image.imageFromPath(ICON_PATH)
+  if not icon then return nil end
+  return icon:setSize(ICON_SIZE):template(true)
 end
 
+local caffeineTask = nil
+local caffeineMenubar = nil
+local toggleCaffeine   -- forward declaration: the click callback toggles too
+
 local function showIndicator(active)
-  if not caffeineMenubar then return end
   if active then
-    caffeineMenubar:returnToMenuBar()
-  else
-    caffeineMenubar:removeFromMenuBar()
+    if caffeineMenubar then return end
+    caffeineMenubar = hs.menubar.new(true, "caffeine")
+    if not caffeineMenubar then return end
+    local icon = coffeeIcon()
+    if icon then
+      caffeineMenubar:setIcon(icon)
+    else
+      caffeineMenubar:setTitle(MENUBAR_TITLE)
+    end
+    caffeineMenubar:setTooltip(MENUBAR_TOOLTIP)
+    caffeineMenubar:setClickCallback(function() toggleCaffeine() end)
+  elseif caffeineMenubar then
+    caffeineMenubar:delete()
+    caffeineMenubar = nil
   end
 end
 
@@ -54,17 +78,13 @@ local function startCaffeine()
   return true
 end
 
-local function toggleCaffeine()
+toggleCaffeine = function()
   if caffeineTask then
     stopCaffeine()
     hs.alert.show("Caffeinate off")
   elseif startCaffeine() then
     hs.alert.show("Caffeinate on")
   end
-end
-
-if caffeineMenubar then
-  caffeineMenubar:setClickCallback(toggleCaffeine)
 end
 
 f19:bind({'alt'}, 'C', toggleCaffeine)
