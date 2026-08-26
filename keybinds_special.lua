@@ -17,6 +17,19 @@ f19:bind({'shift', 'alt'}, 'Q', function()
   end, { "run", "Quit All Apps" }):start()
 end)
 
+-- Hyper+Shift+Opt+K - restart Karabiner-Elements. Kickstarts the two user
+-- agents that do the remapping, not the settings UI (quitting that app leaves
+-- the engine running and fixes nothing). No sudo: the privileged grabber
+-- daemon survives, only the session-side agents are recycled. Same async
+-- hs.task reasoning as the binding above. Note the hyperkey itself is
+-- Karabiner's caps->F19 mapping, so this can only fire while it still works.
+f19:bind({'shift', 'alt'}, 'K', function()
+  hs.task.new("/bin/sh", function(exitCode)
+    hs.alert.show(exitCode == 0 and "Karabiner restarted" or "Karabiner restart failed")
+  end, { "-c", "for a in Karabiner-Core-Service-rev2 karabiner_console_user_server; do " ..
+                 "launchctl kickstart -k \"gui/$(id -u)/org.pqrs.service.agent.$a\" || exit 1; done" }):start()
+end)
+
 -- F13 special binding - Screenshot (Clipboard)
 hs.hotkey.bind({}, "F13", function()
   hs.eventtap.keyStroke({"shift", "cmd"}, "4")

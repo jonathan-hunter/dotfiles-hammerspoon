@@ -44,18 +44,44 @@ local function petWatchdog()
   if f19.isActive then startWatchdog() end
 end
 
+-- Double-tap hyper (caps lock) toggles the real caps lock ------------------
+-- A "tap" is a press/release of F19 with no modal binding fired in between,
+-- which the bind wrapper below reports via modalUsed. Two taps inside the
+-- window toggle caps lock; alerting the state is not cosmetic, the physical
+-- caps LED is dark because Karabiner has remapped the key away.
+local DOUBLE_TAP_WINDOW = 0.35  -- seconds between releases
+local modalUsed = false
+local lastTapAt = 0
+
+local function registerTap()
+  local now = hs.timer.secondsSinceEpoch()
+  if now - lastTapAt < DOUBLE_TAP_WINDOW then
+    lastTapAt = 0  -- consume, so a third tap starts a fresh pair
+    hs.alert.show(hs.hid.capslock.toggle() and "CAPS LOCK ON" or "caps lock off")
+  else
+    lastTapAt = now
+  end
+end
+
 -- Centralised enter/exit so every F19 chord (plain, shift, alt, shift+alt)
 -- shares one isActive flag and one watchdog, not just the plain binding.
 local function enterModal()
   f19.isActive = true
+  modalUsed = false
   f19:enter()
   startWatchdog()
 end
 
 local function exitModal()
   clearWatchdog()
+  -- One key-up can reach here twice -- the event tap below beats Carbon to it,
+  -- then the hotkey release callback runs anyway. Only the transition counts:
+  -- without this guard the second call sees a ~0s gap and reads a single tap
+  -- as a double, toggling caps lock on every bare hyper press.
+  local wasActive = f19.isActive
   f19.isActive = false
   f19:exit()
+  if wasActive and not modalUsed then registerTap() end
 end
 
 -- F19 acts as a pure modifier: modal active while held, inactive when released.
@@ -89,6 +115,7 @@ function f19.bind(self, mods, key, pressedFn, releasedFn, repeatFn)
   local function withPet(fn)
     if not fn then return nil end
     return function(...)
+      modalUsed = true
       petWatchdog()
       return fn(...)
     end

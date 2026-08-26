@@ -2,8 +2,8 @@
 ~/.hammerspoon/keybinds_window_mgmt.lua
 Window management keybindings using hyper key (Caps Lock mapped to F19).
 Native Hammerspoon tiling layout, hyper+opt+1..4 one-shot multi-window
-layouts, vim-style focus navigation, and shift+hyper+1..9 to move the
-focused window to space N.
+layouts, hyper+shift+opt+1..5 equal-column layouts, vim-style focus
+navigation, and shift+hyper+1..9 to move the focused window to space N.
 ]]
 
 -- Configuration
@@ -101,6 +101,14 @@ end
 
 for i, slots in ipairs(LAYOUTS) do
   f19:bind({'alt'}, tostring(i), function() applyLayout(slots) end)
+end
+
+-- Hyper+Shift+Opt+1..5: n equal full-height columns, left to right. Same
+-- hero/wrap rules as LAYOUTS -- the focused window takes the leftmost column.
+for n = 1, 5 do
+  local slots = {}
+  for i = 1, n do slots[i] = {(i - 1) / n, 0, 1 / n, 1} end
+  f19:bind({'shift', 'alt'}, tostring(n), function() applyLayout(slots) end)
 end
 
 -- Directional focus is called frequently while Hyper is held. Calling
