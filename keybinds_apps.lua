@@ -1,11 +1,11 @@
 -- ~/.hammerspoon/keybinds_apps.lua
 -- App focus or launch keybindings using hyper key (Caps Lock mapped to F19)
 
-bindApp({}, 'B', "Zen")
+bindApp({}, 'B', "Brave Browser")
 bindApp({}, '1', "1Password")
 bindApp({}, 'C', "Calendar")
 bindApp({}, 'A', "Claude")
-bindApp({}, 'T', "Ghostty")
+bindApp({}, 'T', "Warp")
 bindApp({}, 'E', "Mail")
 bindApp({}, 'P', "Podcasts")
 bindApp({}, 'R', "Reminders")
@@ -15,7 +15,7 @@ bindApp({}, 'Z', "zoom.us")
 bindApp({}, 'N', "Bear")
 bindApp({}, 'O', "Obsidian")
 
-bindApp({'shift'}, 'B', "Safari")
+bindApp({'shift'}, 'B', "Google Chrome")
 bindApp({'shift'}, 'F', "FileZilla")
 bindApp({'shift'}, 'T', "Music")
 bindApp({'shift'}, 'C', "Visual Studio Code")
@@ -28,3 +28,4 @@ bindApp({'shift'}, 'Z', "Zotero")
 bindApp({'shift'}, 'S', "Shortcuts")
 
 bindApp({'alt'}, 'B', "Brain.fm")
+bindApp({'alt'}, 'T', "Ghostty")
