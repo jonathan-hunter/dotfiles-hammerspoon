@@ -76,9 +76,9 @@ local function render()
     return
   end
 
-  local dark = hs.host.interfaceStyle() == "Dark"
-  local textColor = dark and { white = 1, alpha = 1 } or { white = 0, alpha = 0.9 }
-  local dimColor = dark and { white = 1, alpha = 0.4 } or { white = 0, alpha = 0.35 }
+  -- Always light-on-dark: the menu bar sits over a dark wallpaper in both appearances.
+  local textColor = { white = 1, alpha = 1 }
+  local dimColor = { white = 1, alpha = 0.4 }
 
   local x = EDGE_PAD
   for _, group in ipairs(model) do
