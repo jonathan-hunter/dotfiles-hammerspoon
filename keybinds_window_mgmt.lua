@@ -194,6 +194,13 @@ end
 -- rects, so the gap is 7px wide and its midpoint sits 3.5px left of zoom.
 local ZOOM_TO_GAP_MIDPOINT = 3.5
 
+-- Per-app drag anchor, in px from the window's left edge, at the button row.
+-- Claude's sidebar is ~330px wide and its column never takes drags.
+-- ponytail: fixed width, breaks if the sidebar becomes resizable
+local DRAG_X_OVERRIDES = {
+  ["com.anthropic.claudefordesktop"] = 380,
+}
+
 -- The minimize (yellow) button's rect, or nil if AX does not expose it.
 -- hs.window only surfaces zoomButtonRect(), so go through the AX element.
 local function minimizeButtonRect(win)
@@ -227,6 +234,13 @@ local function moveWinToSpaceByDrag(win, n)
   local minimize = minimizeButtonRect(win)
   if minimize and minimize.x + minimize.w <= zoom.x then
     pt.x = (minimize.x + minimize.w + zoom.x) / 2
+  end
+  -- Some apps make the sidebar's whole column no-drag, even while it is
+  -- collapsed, so the gap is dead; press just past the sidebar's edge instead.
+  local dragX = DRAG_X_OVERRIDES[win:application():bundleID()]
+  if dragX then
+    local f = win:frame()
+    pt.x = math.min(f.x + dragX, f.x + f.w - 20)
   end
   local orig = hs.mouse.absolutePosition()
 
