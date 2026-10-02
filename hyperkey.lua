@@ -224,7 +224,7 @@ local function cycleAppWindowsIn(app, wins)
   local curIdx = cur and cur.index
   local desktops = {}
   for i, group in ipairs(taskbar.getModel()) do
-    if i ~= curIdx and i <= 9 then
+    if i ~= curIdx and i <= 10 then
       for _, b in ipairs(group.bundles) do
         if b == bundle then
           desktops[#desktops + 1] = i
@@ -241,7 +241,7 @@ local function cycleAppWindowsIn(app, wins)
       if d > curIdx then target = d break end
     end
   end
-  hs.eventtap.keyStroke({ "ctrl" }, tostring(target), 0)
+  hs.eventtap.keyStroke({ "ctrl" }, tostring(target % 10), 0)
   hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
     withStandardWindows(app, function(arrived)
       if arrived[1] then arrived[1]:focus() end

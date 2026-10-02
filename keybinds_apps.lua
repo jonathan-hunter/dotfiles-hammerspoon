@@ -12,7 +12,7 @@ bindApp({}, 'R', "Reminders")
 bindApp({}, 'S', "Slack")
 bindApp({}, 'W', "WhatsApp")
 bindApp({}, 'Z', "Zotero")
-bindApp({}, 'N', "Bear")
+bindApp({}, 'N', "Notes")
 -- bindApp({}, 'O', "Obsidian")
 
 bindApp({'shift'}, 'B', "Brave Browser")

@@ -148,13 +148,13 @@ updateMenubar(currentSpaceIndex())
 
 -- Non-consuming keyDown tap (macOS still receives the keystroke). Fires the
 -- HUD immediately on:
---   * ctrl+1..9 — macOS's space-switch shortcut, so the digit appears before
+--   * ctrl+1..9,0 — macOS's space-switch shortcut, so the digit appears before
 --     the space-switch animation. Also catches the synthetic ctrl+N posted by
 --     the shift+hyper+N "move window to space" binding.
 --   * cmd+1..9 — visual confirmation of the cmd hotkey; shown as "⌘N".
 local digitFromKeyCode = {}
-for d = 1, 9 do
-  local code = hs.keycodes.map[tostring(d)]
+for d = 1, 10 do
+  local code = hs.keycodes.map[tostring(d % 10)]
   if code then digitFromKeyCode[code] = d end
 end
 
@@ -173,7 +173,7 @@ local hotkeyTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(
     end
     queueHud(tostring(digit), nil, digit)
     verifyTimer:start()
-  elseif flags.cmd and not flags.ctrl and not flags.alt and not flags.shift then
+  elseif digit < 10 and flags.cmd and not flags.ctrl and not flags.alt and not flags.shift then
     queueHud("⌘" .. digit, HUD_WIDTH_CMD)
   end
   return false

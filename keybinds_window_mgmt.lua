@@ -185,7 +185,7 @@ end)
 navigationRefreshTimer:start(0)
 
 local function switchToSpaceNumber(n)
-  hs.eventtap.keyStroke({"ctrl"}, tostring(n), 0)
+  hs.eventtap.keyStroke({"ctrl"}, tostring(n % 10), 0)  -- Desktop 10 is ctrl+0
 end
 
 -- Distance left of the zoom button's leading edge to the midpoint of the gap
@@ -257,16 +257,16 @@ local function moveWinToSpaceByDrag(win, n)
   end)
 end
 
---- Move focused window to space N (1..9)
+--- Move focused window to space N (1..10)
 local function moveWinToSpace(n)
   local win = hs.window.focusedWindow()
   if not win then return end
   moveWinToSpaceByDrag(win, n)
 end
 
--- Shift+Hyper+1..9 → move focused window to space N
-for i = 1, 9 do
-  f19:bind({'shift'}, tostring(i), function() moveWinToSpace(i) end)
+-- Shift+Hyper+1..9,0 → move focused window to space N (0 = Desktop 10)
+for i = 1, 10 do
+  f19:bind({'shift'}, tostring(i % 10), function() moveWinToSpace(i) end)
 end
 
 return {

@@ -30,6 +30,7 @@ local NUMBER_FONT = ".AppleSystemUIFont"
 local GROUP_GAP = 7
 local EDGE_PAD = 3
 local MAX_ICONS_PER_SPACE = 4     -- overflow renders as an unclickable "+n"
+local NOTCH_WIDTH = 220              -- calibration knob: notch (~200pt) plus breathing room
 
 local windowApps = {}   -- windowID -> bundleID
 local appNames = {}     -- bundleID -> display name (tooltip only)
@@ -38,7 +39,8 @@ local model = {}        -- array indexed by Desktop number: { bundles = {...} }
 local currentIndex = nil
 local barWidth = 0      -- width of the last rendered strip, for click hit-testing
 
-local spaceMenubar = hs.menubar.new(true, "space-taskbar")
+local spaceMenubar = nil  -- status item; only exists when no notch screen is present
+local halfCanvases = {}   -- [1] left / [2] right of the notch, built lazily
 local barCanvas = hs.canvas.new({ x = 0, y = 0, w = 10, h = BAR_HEIGHT })
 
 local function appIcon(bundle)
@@ -65,37 +67,41 @@ local function rememberWindow(win)
   end
 end
 
--- Render the strip offscreen and install it as the menu bar item's icon.
--- Pure local drawing -- no Spaces IPC -- so it is safe on the switch path.
-local function render()
-  if not spaceMenubar then return end
-  if #model == 0 then
-    barWidth = 0
-    spaceMenubar:setIcon(nil)
-    spaceMenubar:setTitle(currentIndex and tostring(currentIndex) or "?")
-    return
+-- The built-in screen if it has a notch (its menu bar is 33pt tall, vs 24).
+local function notchScreen()
+  for _, scr in ipairs(hs.screen.allScreens()) do
+    if scr:name():find("Built%-in") and scr:frame().y - scr:fullFrame().y >= 30 then
+      return scr
+    end
   end
+end
 
-  -- Always light-on-dark: the menu bar sits over a dark wallpaper in both appearances.
-  local textColor = { white = 1, alpha = 1 }
-  local dimColor = { white = 1, alpha = 0.4 }
-
+-- Assign x/width to groups[first..last], recording which half they sit in.
+-- Returns the strip's total width.
+local function layout(first, last, half)
   local x = EDGE_PAD
-  for _, group in ipairs(model) do
+  for i = first, last do
+    local group = model[i]
     local shown = math.min(#group.bundles, MAX_ICONS_PER_SPACE)
     local extra = #group.bundles - shown
-    group._shown, group._extra, group._x = shown, extra, x
+    group._shown, group._extra, group._x, group._half = shown, extra, x, half
     local w = NUMBER_WIDTH + shown * (ICON_SIZE + ICON_GAP)
     if extra > 0 then w = w + 8 + 5 * #tostring(extra) end
     group._w = w
     x = x + w + GROUP_GAP
   end
-  local totalWidth = x - GROUP_GAP + EDGE_PAD
-  barWidth = totalWidth
+  return x - GROUP_GAP + EDGE_PAD
+end
+
+local function buildElements(first, last)
+  -- Always light-on-dark: the menu bar sits over a dark wallpaper in both appearances.
+  local textColor = { white = 1, alpha = 1 }
+  local dimColor = { white = 1, alpha = 0.4 }
 
   local elements = {}
-  for i, group in ipairs(model) do
+  for i = first, last do
     if i == currentIndex then
+      local group = model[i]
       elements[#elements + 1] = {
         type = "rectangle", action = "fill",
         roundedRectRadii = { xRadius = 5, yRadius = 5 },
@@ -104,9 +110,10 @@ local function render()
       }
     end
   end
-  for i, group in ipairs(model) do
+  for i = first, last do
+    local group = model[i]
     elements[#elements + 1] = {
-      type = "text", text = tostring(i),
+      type = "text", text = tostring(i % 10),  -- Desktop 10 reads as 0, matching ctrl+0
       textSize = NUMBER_TEXT_SIZE, textFont = NUMBER_FONT,
       textColor = (group._shown > 0 or i == currentIndex) and textColor or dimColor,
       frame = { x = group._x, y = 2, w = NUMBER_WIDTH, h = 18 },
@@ -130,9 +137,76 @@ local function render()
       }
     end
   end
+  return elements
+end
 
-  barCanvas:size({ w = totalWidth, h = BAR_HEIGHT })
-  barCanvas:replaceElements(table.unpack(elements))
+local handleClick  -- defined with the click code below
+
+-- Notch mode: split the Desktops across two borderless canvases hugging either
+-- side of the notch. Canvases don't get status-item placement, so they are
+-- positioned from the screen frame, and clicks arrive in canvas-local x.
+local function renderSplit(scr)
+  local full, menuH = scr:fullFrame(), scr:frame().y - scr:fullFrame().y
+  local mid = math.ceil(#model / 2)
+  local ranges = { { 1, mid }, { mid + 1, #model } }
+  for half, r in ipairs(ranges) do
+    local cv = halfCanvases[half]
+    if not cv then
+      cv = hs.canvas.new({ x = 0, y = 0, w = 10, h = BAR_HEIGHT })
+      cv:level(hs.canvas.windowLevels.status)
+      cv:behavior({ "canJoinAllSpaces", "stationary" })
+      cv:clickActivating(false)
+      cv:mouseCallback(function(_, msg, _, x) if msg == "mouseUp" then handleClick(x, half) end end)
+      halfCanvases[half] = cv
+    end
+    if r[1] > r[2] then
+      cv:hide()
+    else
+      local w = layout(r[1], r[2], half)
+      local elements = buildElements(r[1], r[2])
+      -- near-invisible backing so clicks in the gaps land on the canvas, not through it
+      table.insert(elements, 1, {
+        type = "rectangle", action = "fill", fillColor = { white = 0, alpha = 0.01 },
+        frame = { x = 0, y = 0, w = w, h = BAR_HEIGHT }, trackMouseUp = true,
+      })
+      local cx = half == 1 and (full.w / 2 - NOTCH_WIDTH / 2 - w) or (full.w / 2 + NOTCH_WIDTH / 2)
+      cv:frame({ x = full.x + cx, y = full.y + (menuH - BAR_HEIGHT) / 2, w = w, h = BAR_HEIGHT })
+      cv:replaceElements(table.unpack(elements))
+      cv:show()
+    end
+  end
+end
+
+-- Render the strip offscreen and install it as the menu bar item's icon.
+-- Pure local drawing -- no Spaces IPC -- so it is safe on the switch path.
+local function render()
+  local scr = notchScreen()
+  if scr then
+    if spaceMenubar then spaceMenubar:delete(); spaceMenubar = nil end
+    barWidth = 0
+    if #model > 0 then renderSplit(scr) end
+    return
+  end
+  for _, cv in ipairs(halfCanvases) do cv:hide() end
+  if not spaceMenubar then
+    spaceMenubar = hs.menubar.new(true, "space-taskbar")
+    spaceMenubar:setClickCallback(function()
+      local pos = hs.mouse.absolutePosition()
+      local frame = spaceMenubar:frame()
+      if not (pos and frame) then return end
+      handleClick(pos.x - frame.x - (frame.w - barWidth) / 2, 1)
+    end)
+  end
+  if #model == 0 then
+    barWidth = 0
+    spaceMenubar:setIcon(nil)
+    spaceMenubar:setTitle(currentIndex and tostring(currentIndex) or "?")
+    return
+  end
+
+  barWidth = layout(1, #model, 1)
+  barCanvas:size({ w = barWidth, h = BAR_HEIGHT })
+  barCanvas:replaceElements(table.unpack(buildElements(1, #model)))
   local img = barCanvas:imageFromCanvas()
   if img then
     spaceMenubar:setTitle(nil)
@@ -259,19 +333,12 @@ local SPACE_FOCUS_DELAY = 0.30
 -- query after an idle period with an empty list; re-ask once before giving up.
 local AX_RETRY_DELAY = 0.15
 
--- Map an absolute mouse x onto the rendered strip. render() records where it
--- drew each group and how many icons fitted, so the offset maps straight back
--- to a Desktop and, when the click landed on an icon, that icon's bundle ID.
--- The status item pads the image it is handed, so the left inset is measured
--- from the live frame rather than assumed.
-local function hitTest(mouseX)
-  if barWidth <= 0 then return nil end
-  local frame = spaceMenubar and spaceMenubar:frame()
-  if not frame then return nil end
-  local x = mouseX - frame.x - (frame.w - barWidth) / 2
-
+-- Map an x offset within a rendered strip (`half` 1 or 2) onto a Desktop and,
+-- when it landed on an icon, that icon's bundle ID. render() records where it
+-- drew each group and how many icons fitted, so the offset maps straight back.
+local function hitTest(x, half)
   for i, group in ipairs(model) do
-    if group._x and x >= group._x - GROUP_GAP / 2
+    if group._half == half and group._x and x >= group._x - GROUP_GAP / 2
         and x < group._x + group._w + GROUP_GAP / 2 then
       local ix = group._x + NUMBER_WIDTH
       for s = 1, (group._shown or 0) do
@@ -332,10 +399,8 @@ local function focusAppOnSpace(bundle, index)
   end)
 end
 
-spaceMenubar:setClickCallback(function()
-  local pos = hs.mouse.absolutePosition()
-  if not pos then return end
-  local index, bundle = hitTest(pos.x)
+handleClick = function(x, half)
+  local index, bundle = hitTest(x, half)
   if not index then return end
 
   local cur = spaceState.currentSpace()
@@ -343,15 +408,19 @@ spaceMenubar:setClickCallback(function()
     if bundle then focusAppOnSpace(bundle, index) end
     return
   end
-  if index > 9 then return end  -- ctrl+N only addresses the first nine Desktops
+  if index > 10 then return end  -- ctrl+N/ctrl+0 only address the first ten Desktops
 
-  hs.eventtap.keyStroke({ "ctrl" }, tostring(index), 0)
+  hs.eventtap.keyStroke({ "ctrl" }, tostring(index % 10), 0)
   if bundle then
     hs.timer.doAfter(SPACE_FOCUS_DELAY, function()
       focusAppOnSpace(bundle, index)
     end)
   end
-end)
+end
+
+-- Screens coming and going (lid close, external display) flip notch mode.
+local screenWatcher = hs.screen.watcher.new(function() refreshTimer:start() end)
+screenWatcher:start()
 
 -- Called by space_hud whenever the current Space index changes (tap fast-path,
 -- watcher, or verify timer). Only moves the highlight -- no IPC -- then
@@ -398,8 +467,10 @@ return {
   hitTest = hitTest,
   -- keeps the in-flight hs.task objects reachable so they aren't collected
   getTasks = function() return helperTask, compileTask end,
-  menubar = spaceMenubar,
+  menubar = function() return spaceMenubar end,
   canvas = barCanvas,
+  halfCanvases = halfCanvases,
+  screenWatcher = screenWatcher,
   refreshTimer = refreshTimer,
   switchRebuildTimer = switchRebuildTimer,
   windowFilter = windowFilter,
