@@ -37,11 +37,8 @@ local appNames = {}     -- bundleID -> display name (tooltip only)
 local iconCache = {}    -- bundleID -> hs.image (false = known missing)
 local model = {}        -- array indexed by Desktop number: { bundles = {...} }
 local currentIndex = nil
-local barWidth = 0      -- width of the last rendered strip, for click hit-testing
 
-local spaceMenubar = nil  -- status item; only exists when no notch screen is present
 local halfCanvases = {}   -- [1] left / [2] right of the notch, built lazily
-local barCanvas = hs.canvas.new({ x = 0, y = 0, w = 10, h = BAR_HEIGHT })
 
 local function appIcon(bundle)
   local icon = iconCache[bundle]
@@ -142,14 +139,20 @@ end
 
 local handleClick  -- defined with the click code below
 
--- Notch mode: split the Desktops across two borderless canvases hugging either
--- side of the notch. Canvases don't get status-item placement, so they are
--- positioned from the screen frame, and clicks arrive in canvas-local x.
-local function renderSplit(scr)
-  local full, menuH = scr:fullFrame(), scr:frame().y - scr:fullFrame().y
-  local mid = math.ceil(#model / 2)
-  local ranges = { { 1, mid }, { mid + 1, #model } }
-  for half, r in ipairs(ranges) do
+-- Draw the Desktops into borderless canvases on the menu bar. On a notched
+-- screen they split into two halves hugging either side of the notch; on any
+-- other screen (external display) one strip is centred. Canvases get no
+-- status-item placement, so they are positioned from the screen frame, and
+-- clicks arrive in canvas-local x.
+local function render()
+  local notch = notchScreen()
+  local scr = notch or hs.screen.primaryScreen()
+  local full = scr:fullFrame()
+  local menuH = math.max(scr:frame().y - full.y, BAR_HEIGHT)  -- 0 when auto-hidden
+  local mid = notch and math.ceil(#model / 2) or #model
+  local ranges = notch and { { 1, mid }, { mid + 1, #model } } or { { 1, #model } }
+  for half = 1, 2 do
+    local r = ranges[half]
     local cv = halfCanvases[half]
     if not cv then
       cv = hs.canvas.new({ x = 0, y = 0, w = 10, h = BAR_HEIGHT })
@@ -159,7 +162,7 @@ local function renderSplit(scr)
       cv:mouseCallback(function(_, msg, _, x) if msg == "mouseUp" then handleClick(x, half) end end)
       halfCanvases[half] = cv
     end
-    if r[1] > r[2] then
+    if not r or r[1] > r[2] then
       cv:hide()
     else
       local w = layout(r[1], r[2], half)
@@ -169,60 +172,15 @@ local function renderSplit(scr)
         type = "rectangle", action = "fill", fillColor = { white = 0, alpha = 0.01 },
         frame = { x = 0, y = 0, w = w, h = BAR_HEIGHT }, trackMouseUp = true,
       })
-      local cx = half == 1 and (full.w / 2 - NOTCH_WIDTH / 2 - w) or (full.w / 2 + NOTCH_WIDTH / 2)
+      local cx = (full.w - w) / 2
+      if notch then
+        cx = half == 1 and (full.w / 2 - NOTCH_WIDTH / 2 - w) or (full.w / 2 + NOTCH_WIDTH / 2)
+      end
       cv:frame({ x = full.x + cx, y = full.y + (menuH - BAR_HEIGHT) / 2, w = w, h = BAR_HEIGHT })
       cv:replaceElements(table.unpack(elements))
       cv:show()
     end
   end
-end
-
--- Render the strip offscreen and install it as the menu bar item's icon.
--- Pure local drawing -- no Spaces IPC -- so it is safe on the switch path.
-local function render()
-  local scr = notchScreen()
-  if scr then
-    if spaceMenubar then spaceMenubar:delete(); spaceMenubar = nil end
-    barWidth = 0
-    if #model > 0 then renderSplit(scr) end
-    return
-  end
-  for _, cv in ipairs(halfCanvases) do cv:hide() end
-  if not spaceMenubar then
-    spaceMenubar = hs.menubar.new(true, "space-taskbar")
-    spaceMenubar:setClickCallback(function()
-      local pos = hs.mouse.absolutePosition()
-      local frame = spaceMenubar:frame()
-      if not (pos and frame) then return end
-      handleClick(pos.x - frame.x - (frame.w - barWidth) / 2, 1)
-    end)
-  end
-  if #model == 0 then
-    barWidth = 0
-    spaceMenubar:setIcon(nil)
-    spaceMenubar:setTitle(currentIndex and tostring(currentIndex) or "?")
-    return
-  end
-
-  barWidth = layout(1, #model, 1)
-  barCanvas:size({ w = barWidth, h = BAR_HEIGHT })
-  barCanvas:replaceElements(table.unpack(buildElements(1, #model)))
-  local img = barCanvas:imageFromCanvas()
-  if img then
-    spaceMenubar:setTitle(nil)
-    spaceMenubar:setIcon(img, false)
-  end
-  -- The tooltip carries the app names the removed dropdown used to spell out.
-  local tooltip = "Spaces"
-  if currentIndex then
-    tooltip = "Current Space: " .. currentIndex
-    local names = {}
-    for _, bundle in ipairs(model[currentIndex] and model[currentIndex].bundles or {}) do
-      names[#names + 1] = appNames[bundle] or bundle
-    end
-    if #names > 0 then tooltip = tooltip .. " (" .. table.concat(names, ", ") .. ")" end
-  end
-  spaceMenubar:setTooltip(tooltip)
 end
 
 -- Place every known window via SkyLight and re-render. Costs one
@@ -418,7 +376,7 @@ handleClick = function(x, half)
   end
 end
 
--- Screens coming and going (lid close, external display) flip notch mode.
+-- Screens coming and going (lid close, external display) flip split vs centred.
 local screenWatcher = hs.screen.watcher.new(function() refreshTimer:start() end)
 screenWatcher:start()
 
@@ -467,8 +425,6 @@ return {
   hitTest = hitTest,
   -- keeps the in-flight hs.task objects reachable so they aren't collected
   getTasks = function() return helperTask, compileTask end,
-  menubar = function() return spaceMenubar end,
-  canvas = barCanvas,
   halfCanvases = halfCanvases,
   screenWatcher = screenWatcher,
   refreshTimer = refreshTimer,
