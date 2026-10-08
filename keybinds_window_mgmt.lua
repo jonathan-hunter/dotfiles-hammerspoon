@@ -198,7 +198,7 @@ local ZOOM_TO_GAP_MIDPOINT = 3.5
 -- row. Claude's sidebar column never takes drags and its width varies, but
 -- the top bar is empty just left of the globe / right-sidebar buttons.
 local DRAG_X_FROM_RIGHT = {
-  ["com.anthropic.claudefordesktop"] = 120,
+  ["com.anthropic.claudefordesktop"] = 140,
 }
 
 -- The minimize (yellow) button's rect, or nil if AX does not expose it.
