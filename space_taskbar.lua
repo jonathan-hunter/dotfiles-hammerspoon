@@ -145,6 +145,8 @@ local handleClick  -- defined with the click code below
 -- status-item placement, so they are positioned from the screen frame, and
 -- clicks arrive in canvas-local x.
 local function render()
+  -- A full-screen app's Space has no menu bar to sit in, so stand aside there.
+  local fullscreen = spaces.spaceType(spaces.focusedSpace()) == "fullscreen"
   local notch = notchScreen()
   local scr = notch or hs.screen.primaryScreen()
   local full = scr:fullFrame()
@@ -157,12 +159,13 @@ local function render()
     if not cv then
       cv = hs.canvas.new({ x = 0, y = 0, w = 10, h = BAR_HEIGHT })
       cv:level(hs.canvas.windowLevels.status)
-      cv:behavior({ "canJoinAllSpaces", "stationary" })
+      -- "transient" (not "stationary") so macOS hides it in Mission Control
+      cv:behavior({ "canJoinAllSpaces", "transient" })
       cv:clickActivating(false)
       cv:mouseCallback(function(_, msg, _, x) if msg == "mouseUp" then handleClick(x, half) end end)
       halfCanvases[half] = cv
     end
-    if not r or r[1] > r[2] then
+    if fullscreen or not r or r[1] > r[2] then
       cv:hide()
     else
       local w = layout(r[1], r[2], half)
