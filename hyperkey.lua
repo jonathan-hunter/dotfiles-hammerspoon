@@ -287,6 +287,14 @@ local function settleAfterLaunch(appName, tries)
   end
 end
 
+-- Bring the app forward after something has launched or poked it (launchOrFocus,
+-- or a URL scheme the app handles), hopping to its Desktop if it isn't here.
+local function settleApp(app)
+  hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
+    settleAfterLaunch(app, LAUNCH_SETTLE_RETRIES)
+  end)
+end
+
 -- Define keybinding function - bind hyper+key to launch/focus app.
 -- Pressing the key again while the app is already frontmost cycles/hops
 -- through its windows instead of being a no-op.
@@ -298,9 +306,7 @@ local function bindApp(mods, key, app)
       return
     end
     launchOrFocus(app)
-    hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
-      settleAfterLaunch(app, LAUNCH_SETTLE_RETRIES)
-    end)
+    settleApp(app)
   end)
 end
 
@@ -309,6 +315,7 @@ end
 return {
   modal = f19,
   bindApp = bindApp,
+  settleApp = settleApp,
   releaseTap = releaseTap,
   watchdog = watchdog,
 }
