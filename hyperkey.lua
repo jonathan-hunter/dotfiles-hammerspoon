@@ -168,7 +168,9 @@ end
 
 local function currentSpaceWindowSet()
   local focused = hs.spaces.focusedSpace()
-  local wins = focused and hs.spaces.windowsForSpace(focused)
+  -- space_state's unwrapped windowsForSpace (~10x cheaper); required here, not
+  -- at the top, because hyperkey loads before the space modules.
+  local wins = focused and require("space_state").windowsForSpace(focused)
   if not wins then return nil end
   local set = {}
   for _, id in ipairs(wins) do set[id] = true end

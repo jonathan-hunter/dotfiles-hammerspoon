@@ -5,6 +5,18 @@ local spaces = require("hs.spaces")
 
 local cacheByUUID = {}
 
+-- hs.spaces.windowsForSpace wraps the SkyLight query with a walk of
+-- Hammerspoon's own AX tree to drop its canvases: ~2ms a call, 10x the query.
+-- Canvases are never standard windows, so nothing here can match them; call
+-- the inner function directly, falling back to the wrapper if a Hammerspoon
+-- update renames the upvalue.
+local windowsForSpace = spaces.windowsForSpace
+for i = 1, math.huge do
+  local name, fn = debug.getupvalue(spaces.windowsForSpace, i)
+  if not name then break end
+  if name == "_windowsForSpace" then windowsForSpace = fn break end
+end
+
 local function screenUUID(screen)
   if type(screen) == "string" then return screen end
   return screen and screen:getUUID() or nil
@@ -20,9 +32,17 @@ local function buildCache(screen)
   -- macOS's ctrl+N shortcuts address regular Desktop spaces, not full-screen
   -- application spaces. Keep both lists so the HUD can retain Mission Control
   -- ordering while direct window moves use the correct Desktop number.
+  -- One read of the display data types every Space; spaces.spaceType()
+  -- re-reads all of it per call (~1ms each).
+  local isUser = {}
+  for _, display in ipairs(spaces.data_managedDisplaySpaces() or {}) do
+    for _, space in ipairs(display.Spaces) do
+      isUser[space.ManagedSpaceID] = space.type == 0  -- spaceType()'s "user"
+    end
+  end
   local userIds = {}
   for _, id in ipairs(allIds) do
-    if spaces.spaceType(id) == "user" then
+    if isUser[id] then
       userIds[#userIds + 1] = id
     end
   end
@@ -106,6 +126,7 @@ screenWatcher:start()
 return {
   currentSpace = currentSpace,
   userSpaces = userSpaces,
+  windowsForSpace = windowsForSpace,
   invalidate = invalidate,
   screenWatcher = screenWatcher,
 }

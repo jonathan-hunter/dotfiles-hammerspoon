@@ -33,7 +33,6 @@ local MAX_ICONS_PER_SPACE = 4     -- overflow renders as an unclickable "+n"
 local NOTCH_WIDTH = 220              -- calibration knob: notch (~200pt) plus breathing room
 
 local windowApps = {}   -- windowID -> bundleID
-local appNames = {}     -- bundleID -> display name (tooltip only)
 local iconCache = {}    -- bundleID -> hs.image (false = known missing)
 local model = {}        -- array indexed by Desktop number: { bundles = {...} }
 local currentIndex = nil
@@ -59,9 +58,6 @@ local function rememberWindow(win)
   local bundle = app and app:bundleID()
   if not bundle then return end
   windowApps[id] = bundle
-  if not appNames[bundle] then
-    appNames[bundle] = app:name() or bundle
-  end
 end
 
 -- The built-in screen if it has a notch (its menu bar is 33pt tall, vs 24).
@@ -195,7 +191,7 @@ local function placeAndRender()
   local userIds = spaceState.userSpaces()
   local perSpace, spaceCount = {}, {}
   for i, spaceId in ipairs(userIds or {}) do
-    local ok, wins = pcall(spaces.windowsForSpace, spaceId)
+    local ok, wins = pcall(spaceState.windowsForSpace, spaceId)
     wins = (ok and type(wins) == "table") and wins or {}
     perSpace[i] = wins
     for _, wid in ipairs(wins) do
@@ -227,44 +223,54 @@ local helperAvailable = hs.fs.attributes(HELPER_BIN, "mode") == "file"
 local helperTask = nil
 local compileTask = nil
 
--- Full model rebuild: render immediately from what AX and past sweeps know,
--- then refine asynchronously once the helper reports windows on other Spaces.
-local function rebuildModel()
+-- Remember every window AX sees (the current Space). With `reported`, also
+-- mark each one so the prune below keeps it.
+local function sweepAX(reported)
   for _, win in ipairs(hs.window.orderedWindows()) do
     rememberWindow(win)
+    if reported then
+      local ok, id = pcall(win.id, win)
+      if ok and id then reported[id] = true end
+    end
   end
+end
 
+-- Full model rebuild from AX plus the helper's all-Spaces report. The AX
+-- sweep (~20-35ms) and placement run once, in the helper's callback, rather
+-- than once before it and again after; without the helper they run now.
+local function rebuildModel()
   if helperAvailable and not helperTask then
     helperTask = hs.task.new(HELPER_BIN, function(exitCode, stdOut)
       helperTask = nil
+      local reported = nil
       if exitCode == 0 and stdOut then
-        local reported = {}
-        for id, bundle, name in stdOut:gmatch("(%d+)\t([^\t\n]+)\t([^\n]+)") do
+        reported = {}
+        for id, bundle in stdOut:gmatch("(%d+)\t([^\t\n]+)\t[^\n]+") do
           local wid = tonumber(id)
           if wid then
             reported[wid] = true
             windowApps[wid] = bundle
-            if not appNames[bundle] then appNames[bundle] = name end
           end
         end
+      end
+      -- Swept after the helper's snapshot, so a window created since then is
+      -- still marked and doesn't flicker out in the prune.
+      sweepAX(reported)
+      if reported then
         -- Prune windows the helper no longer reports: Electron apps hide
         -- their window on close instead of destroying it, so windowDestroyed
         -- never fires and a stale entry would keep the app's icon alive.
-        -- Keep anything AX still sees so a window created after the helper
-        -- snapshot doesn't flicker out.
-        for _, win in ipairs(hs.window.orderedWindows()) do
-          local ok, id = pcall(win.id, win)
-          if ok and id then reported[id] = true end
-        end
         for wid in pairs(windowApps) do
           if not reported[wid] then windowApps[wid] = nil end
         end
-        placeAndRender()
       end
+      placeAndRender()
     end)
-    if not helperTask:start() then helperTask = nil end
+    if helperTask:start() then return end  -- the callback sweeps and renders
+    helperTask = nil
   end
 
+  sweepAX()
   placeAndRender()
 end
 
@@ -325,7 +331,7 @@ local function appWindowsOnSpace(bundle, index)
   local spaceId = userIds and userIds[index]
   local onSpace = nil
   if spaceId then
-    local ok, wins = pcall(spaces.windowsForSpace, spaceId)
+    local ok, wins = pcall(spaceState.windowsForSpace, spaceId)
     if ok and type(wins) == "table" then
       onSpace = {}
       for _, wid in ipairs(wins) do onSpace[wid] = true end
