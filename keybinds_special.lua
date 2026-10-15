@@ -40,6 +40,24 @@ hs.hotkey.bind({}, "F14", function()
   hs.hid.capslock.toggle()
 end)
 
+-- Cmd+Shift+Return - open a new line above the caret (line start, Return, Up).
+-- Waits for the physical cmd+shift to be released first: Firefox merges held
+-- modifiers into the synthetic keys, so firing early made it flaky there.
+-- ponytail: global bind, so it shadows apps with their own Cmd+Shift+Return
+-- (add a frontmost-app check if so).
+local function newLineAbove(tries)
+  local m = hs.eventtap.checkKeyboardModifiers()
+  if (m.cmd or m.shift) and tries < 50 then
+    return hs.timer.doAfter(0.01, function() newLineAbove(tries + 1) end)
+  end
+  hs.eventtap.keyStroke({"cmd"}, "left", 20000)
+  hs.timer.doAfter(0.03, function()
+    hs.eventtap.keyStroke({}, "return", 20000)
+    hs.timer.doAfter(0.03, function() hs.eventtap.keyStroke({}, "up", 20000) end)
+  end)
+end
+hs.hotkey.bind({"cmd", "shift"}, "return", function() newLineAbove(0) end)
+
 -- Cmd+Shift+V - Paste as plain text (preserves original clipboard)
 hs.hotkey.bind({"cmd", "shift"}, "V", function()
   local original = hs.pasteboard.readAllData()
