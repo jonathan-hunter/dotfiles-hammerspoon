@@ -34,10 +34,13 @@ local NOTCH_WIDTH = 220              -- calibration knob: notch (~200pt) plus br
 
 local windowApps = {}   -- windowID -> bundleID
 local iconCache = {}    -- bundleID -> hs.image (false = known missing)
-local model = {}        -- array indexed by Desktop number: { bundles = {...} }
-local currentIndex = nil
+-- screen UUID -> array indexed by that screen's Desktop number:
+-- { bundles = {...}, spaceId = n }. Each display has its own Spaces.
+local models = {}
+local globalNumber = {}  -- spaceId -> ctrl+N Desktop number (counts across displays)
+local currentSpaceId = nil
 
-local halfCanvases = {}   -- [1] left / [2] right of the notch, built lazily
+local canvases = {}   -- screen UUID -> { [1] left / [2] right of the notch }, built lazily
 
 local function appIcon(bundle)
   local icon = iconCache[bundle]
@@ -60,18 +63,14 @@ local function rememberWindow(win)
   windowApps[id] = bundle
 end
 
--- The built-in screen if it has a notch (its menu bar is 33pt tall, vs 24).
-local function notchScreen()
-  for _, scr in ipairs(hs.screen.allScreens()) do
-    if scr:name():find("Built%-in") and scr:frame().y - scr:fullFrame().y >= 30 then
-      return scr
-    end
-  end
+-- A built-in screen with a notch (its menu bar is 33pt tall, vs 24).
+local function hasNotch(scr)
+  return scr:name():find("Built%-in") and scr:frame().y - scr:fullFrame().y >= 30
 end
 
 -- Assign x/width to groups[first..last], recording which half they sit in.
 -- Returns the strip's total width.
-local function layout(first, last, half)
+local function layout(model, first, last, half)
   local x = EDGE_PAD
   for i = first, last do
     local group = model[i]
@@ -86,19 +85,20 @@ local function layout(first, last, half)
   return x - GROUP_GAP + EDGE_PAD
 end
 
-local function buildElements(first, last)
+local function buildElements(model, first, last, activeId)
   -- Always light-on-dark: the menu bar sits over a dark wallpaper in both appearances.
   local textColor = { white = 1, alpha = 1 }
   local dimColor = { white = 1, alpha = 0.4 }
 
   local elements = {}
   for i = first, last do
-    if i == currentIndex then
+    if model[i].spaceId == activeId then
       local group = model[i]
       elements[#elements + 1] = {
-        type = "rectangle", action = "fill",
+        type = "rectangle", action = "strokeAndFill",
         roundedRectRadii = { xRadius = 5, yRadius = 5 },
-        fillColor = { red = 0.3, green = 0.55, blue = 1.0, alpha = 0.35 },
+        fillColor = { red = 0.25, green = 0.5, blue = 1.0, alpha = 0.75 },
+        strokeColor = { white = 1, alpha = 0.55 }, strokeWidth = 1,
         frame = { x = group._x - 3, y = 1, w = group._w + 5, h = BAR_HEIGHT - 2 },
       }
     end
@@ -108,7 +108,7 @@ local function buildElements(first, last)
     elements[#elements + 1] = {
       type = "text", text = tostring(i % 10),  -- Desktop 10 reads as 0, matching ctrl+0
       textSize = NUMBER_TEXT_SIZE, textFont = NUMBER_FONT,
-      textColor = (group._shown > 0 or i == currentIndex) and textColor or dimColor,
+      textColor = (group._shown > 0 or group.spaceId == activeId) and textColor or dimColor,
       frame = { x = group._x, y = 2, w = NUMBER_WIDTH, h = 18 },
     }
     local ix = group._x + NUMBER_WIDTH
@@ -135,37 +135,38 @@ end
 
 local handleClick  -- defined with the click code below
 
--- Draw the Desktops into borderless canvases on the menu bar. On a notched
--- screen they split into two halves hugging either side of the notch; on any
--- other screen (external display) one strip is centred. Canvases get no
--- status-item placement, so they are positioned from the screen frame, and
--- clicks arrive in canvas-local x.
-local function render()
+-- Draw each screen's Desktops into borderless canvases on its menu bar. On a
+-- notched screen they split into two halves hugging either side of the notch;
+-- on any other screen one strip is centred. Canvases get no status-item
+-- placement, so they are positioned from the screen frame, and clicks arrive
+-- in canvas-local x.
+local function renderScreen(scr, uuid, activeId)
+  local model = models[uuid] or {}
   -- A full-screen app's Space has no menu bar to sit in, so stand aside there.
-  local fullscreen = spaces.spaceType(spaces.focusedSpace()) == "fullscreen"
-  local notch = notchScreen()
-  local scr = notch or hs.screen.primaryScreen()
+  local fullscreen = activeId and spaces.spaceType(activeId) == "fullscreen"
+  local notch = hasNotch(scr)
   local full = scr:fullFrame()
   local menuH = math.max(scr:frame().y - full.y, BAR_HEIGHT)  -- 0 when auto-hidden
   local mid = notch and math.ceil(#model / 2) or #model
   local ranges = notch and { { 1, mid }, { mid + 1, #model } } or { { 1, #model } }
+  canvases[uuid] = canvases[uuid] or {}
   for half = 1, 2 do
     local r = ranges[half]
-    local cv = halfCanvases[half]
+    local cv = canvases[uuid][half]
     if not cv then
       cv = hs.canvas.new({ x = 0, y = 0, w = 10, h = BAR_HEIGHT })
       cv:level(hs.canvas.windowLevels.status)
       -- "transient" (not "stationary") so macOS hides it in Mission Control
       cv:behavior({ "canJoinAllSpaces", "transient" })
       cv:clickActivating(false)
-      cv:mouseCallback(function(_, msg, _, x) if msg == "mouseUp" then handleClick(x, half) end end)
-      halfCanvases[half] = cv
+      cv:mouseCallback(function(_, msg, _, x) if msg == "mouseUp" then handleClick(x, uuid, half) end end)
+      canvases[uuid][half] = cv
     end
     if fullscreen or not r or r[1] > r[2] then
       cv:hide()
     else
-      local w = layout(r[1], r[2], half)
-      local elements = buildElements(r[1], r[2])
+      local w = layout(model, r[1], r[2], half)
+      local elements = buildElements(model, r[1], r[2], activeId)
       -- near-invisible backing so clicks in the gaps land on the canvas, not through it
       table.insert(elements, 1, {
         type = "rectangle", action = "fill", fillColor = { white = 0, alpha = 0.01 },
@@ -182,36 +183,71 @@ local function render()
   end
 end
 
+local function render()
+  local active = spaces.activeSpaces() or {}  -- screen UUID -> visible Space
+  local present = {}
+  for _, scr in ipairs(hs.screen.allScreens()) do
+    local uuid = scr:getUUID()
+    present[uuid] = true
+    renderScreen(scr, uuid, active[uuid])
+  end
+  for uuid, pair in pairs(canvases) do  -- unplugged displays
+    if not present[uuid] then
+      for _, cv in pairs(pair) do cv:delete() end
+      canvases[uuid] = nil
+    end
+  end
+end
+
 -- Place every known window via SkyLight and re-render. Costs one
 -- windowsForSpace call per Desktop, so it only runs from debounced timers.
 -- A window reported on more than one Desktop is sticky -- e.g. a Meet
 -- picture-in-picture pop-out, which joins all Spaces -- and says nothing
 -- about where its app actually lives, so it is excluded from every group.
 local function placeAndRender()
-  local userIds = spaceState.userSpaces()
-  local perSpace, spaceCount = {}, {}
-  for i, spaceId in ipairs(userIds or {}) do
-    local ok, wins = pcall(spaceState.windowsForSpace, spaceId)
-    wins = (ok and type(wins) == "table") and wins or {}
-    perSpace[i] = wins
-    for _, wid in ipairs(wins) do
-      spaceCount[wid] = (spaceCount[wid] or 0) + 1
+  local perScreen, spaceCount = {}, {}
+  for _, scr in ipairs(hs.screen.allScreens()) do
+    local perSpace = {}
+    for i, spaceId in ipairs(spaceState.userSpaces(scr) or {}) do
+      local ok, wins = pcall(spaceState.windowsForSpace, spaceId)
+      wins = (ok and type(wins) == "table") and wins or {}
+      perSpace[i] = { spaceId = spaceId, wins = wins }
+      for _, wid in ipairs(wins) do
+        spaceCount[wid] = (spaceCount[wid] or 0) + 1
+      end
     end
+    perScreen[scr:getUUID()] = perSpace
   end
 
   local rebuilt = {}
-  for i, wins in ipairs(perSpace) do
-    local bundles, seen = {}, {}
-    for _, wid in ipairs(wins) do
-      local bundle = spaceCount[wid] == 1 and windowApps[wid] or nil
-      if bundle and not seen[bundle] then
-        seen[bundle] = true
-        bundles[#bundles + 1] = bundle
+  for uuid, perSpace in pairs(perScreen) do
+    local model = {}
+    for i, space in ipairs(perSpace) do
+      local bundles, seen = {}, {}
+      for _, wid in ipairs(space.wins) do
+        local bundle = spaceCount[wid] == 1 and windowApps[wid] or nil
+        if bundle and not seen[bundle] then
+          seen[bundle] = true
+          bundles[#bundles + 1] = bundle
+        end
+      end
+      model[i] = { bundles = bundles, spaceId = space.spaceId }
+    end
+    rebuilt[uuid] = model
+  end
+  models = rebuilt
+
+  -- ctrl+N numbers Desktops across displays in Mission Control's display order.
+  globalNumber = {}
+  local n = 0
+  for _, display in ipairs(spaces.data_managedDisplaySpaces() or {}) do
+    for _, space in ipairs(display.Spaces) do
+      if space.type == 0 then
+        n = n + 1
+        globalNumber[space.ManagedSpaceID] = n
       end
     end
-    rebuilt[i] = { bundles = bundles }
   end
-  model = rebuilt
   render()
 end
 
@@ -300,42 +336,39 @@ local SPACE_FOCUS_DELAY = 0.30
 -- query after an idle period with an empty list; re-ask once before giving up.
 local AX_RETRY_DELAY = 0.15
 
--- Map an x offset within a rendered strip (`half` 1 or 2) onto a Desktop and,
--- when it landed on an icon, that icon's bundle ID. render() records where it
--- drew each group and how many icons fitted, so the offset maps straight back.
-local function hitTest(x, half)
-  for i, group in ipairs(model) do
+-- Map an x offset within a screen's rendered strip (`half` 1 or 2) onto a
+-- Desktop and, when it landed on an icon, that icon's bundle ID. render()
+-- records where it drew each group and how many icons fitted, so the offset
+-- maps straight back.
+local function hitTest(x, uuid, half)
+  for _, group in ipairs(models[uuid] or {}) do
     if group._half == half and group._x and x >= group._x - GROUP_GAP / 2
         and x < group._x + group._w + GROUP_GAP / 2 then
       local ix = group._x + NUMBER_WIDTH
       for s = 1, (group._shown or 0) do
         if x >= ix and x < ix + ICON_SIZE + ICON_GAP then
-          return i, group.bundles[s]
+          return group.spaceId, group.bundles[s]
         end
         ix = ix + ICON_SIZE + ICON_GAP
       end
-      return i  -- the number, or the "+n" overflow: Desktop only
+      return group.spaceId  -- the number, or the "+n" overflow: Desktop only
     end
   end
   return nil
 end
 
--- The app's standard, non-minimized windows on Desktop `index`, frontmost
+-- The app's standard, non-minimized windows on Space `spaceId`, frontmost
 -- first. AX reports an app's windows on every Space, so it is the Desktop's
 -- SkyLight window-id set that confines the result to the one clicked.
-local function appWindowsOnSpace(bundle, index)
+local function appWindowsOnSpace(bundle, spaceId)
   local app = hs.application.get(bundle)
   if not app then return nil, {} end
 
-  local userIds = spaceState.userSpaces()
-  local spaceId = userIds and userIds[index]
   local onSpace = nil
-  if spaceId then
-    local ok, wins = pcall(spaceState.windowsForSpace, spaceId)
-    if ok and type(wins) == "table" then
-      onSpace = {}
-      for _, wid in ipairs(wins) do onSpace[wid] = true end
-    end
+  local ok, wins = pcall(spaceState.windowsForSpace, spaceId)
+  if ok and type(wins) == "table" then
+    onSpace = {}
+    for _, wid in ipairs(wins) do onSpace[wid] = true end
   end
 
   local found = {}
@@ -349,15 +382,15 @@ local function appWindowsOnSpace(bundle, index)
   return app, found
 end
 
-local function focusAppOnSpace(bundle, index)
-  local app, wins = appWindowsOnSpace(bundle, index)
+local function focusAppOnSpace(bundle, spaceId)
+  local app, wins = appWindowsOnSpace(bundle, spaceId)
   if not app then return end
   if wins[1] then
     wins[1]:focus()
     return
   end
   hs.timer.doAfter(AX_RETRY_DELAY, function()
-    local retryApp, retryWins = appWindowsOnSpace(bundle, index)
+    local retryApp, retryWins = appWindowsOnSpace(bundle, spaceId)
     if retryWins[1] then
       retryWins[1]:focus()
     elseif retryApp then
@@ -366,36 +399,38 @@ local function focusAppOnSpace(bundle, index)
   end)
 end
 
-handleClick = function(x, half)
-  local index, bundle = hitTest(x, half)
-  if not index then return end
+handleClick = function(x, uuid, half)
+  local spaceId, bundle = hitTest(x, uuid, half)
+  if not spaceId then return end
 
-  local cur = spaceState.currentSpace()
-  if cur and cur.index == index then
-    if bundle then focusAppOnSpace(bundle, index) end
+  if spaces.activeSpaceOnScreen(uuid) == spaceId then
+    if bundle then focusAppOnSpace(bundle, spaceId) end
     return
   end
-  if index > 10 then return end  -- ctrl+N/ctrl+0 only address the first ten Desktops
+  local n = globalNumber[spaceId]
+  if not n or n > 10 then return end  -- ctrl+N/ctrl+0 only address the first ten Desktops
 
-  hs.eventtap.keyStroke({ "ctrl" }, tostring(index % 10), 0)
+  hs.eventtap.keyStroke({ "ctrl" }, tostring(n % 10), 0)
   if bundle then
     hs.timer.doAfter(SPACE_FOCUS_DELAY, function()
-      focusAppOnSpace(bundle, index)
+      focusAppOnSpace(bundle, spaceId)
     end)
   end
 end
 
--- Screens coming and going (lid close, external display) flip split vs centred.
+-- Screens coming and going (lid close, external display) add or drop strips.
 local screenWatcher = hs.screen.watcher.new(function() refreshTimer:start() end)
 screenWatcher:start()
 
 -- Called by space_hud whenever the current Space index changes (tap fast-path,
 -- watcher, or verify timer). Only moves the highlight -- no IPC -- then
 -- schedules a rebuild for after the transition, since windows may have moved.
-local function setCurrentIndex(idx)
-  if idx == false then idx = nil end
-  if idx ~= currentIndex then
-    currentIndex = idx
+-- Keyed on the focused Space rather than `idx`: that index is per display, so
+-- a switch on the other screen can leave it unchanged.
+local function setCurrentIndex()
+  local focused = spaces.focusedSpace()
+  if focused ~= currentSpaceId then
+    currentSpaceId = focused
     render()
   end
   switchRebuildTimer:start()
@@ -429,12 +464,13 @@ refreshTimer:start()
 return {
   setCurrentIndex = setCurrentIndex,
   refresh = rebuildModel,
-  getModel = function() return model end,
+  -- the primary screen's Desktops, indexed by ctrl+N number
+  getModel = function() return models[hs.screen.primaryScreen():getUUID()] or {} end,
   -- exported for programmatic testing of click targeting via the hs IPC CLI
   hitTest = hitTest,
   -- keeps the in-flight hs.task objects reachable so they aren't collected
   getTasks = function() return helperTask, compileTask end,
-  halfCanvases = halfCanvases,
+  canvases = canvases,
   screenWatcher = screenWatcher,
   refreshTimer = refreshTimer,
   switchRebuildTimer = switchRebuildTimer,
