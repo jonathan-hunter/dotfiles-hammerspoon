@@ -43,10 +43,15 @@ local currentSpaceId = nil
 local canvases = {}   -- screen UUID -> { [1] left / [2] right of the notch }, built lazily
 
 local function appIcon(bundle)
-  local icon = iconCache[bundle]
+  -- Slack's bundle only ships the white icon; Finder renders a dark one that no API exposes.
+  -- Use our saved copy in dark mode only, keyed per style so a theme flip picks the right one.
+  local dark = bundle == "com.tinyspeck.slackmacgap" and hs.host.interfaceStyle() == "Dark"
+  local key = dark and bundle .. ":dark" or bundle
+  local icon = iconCache[key]
   if icon == nil then
-    icon = hs.image.imageFromAppBundle(bundle) or false
-    iconCache[bundle] = icon
+    if dark then icon = hs.image.imageFromPath(hs.configdir .. "/assets/slack-dark.png") end
+    icon = icon or hs.image.imageFromAppBundle(bundle) or false
+    iconCache[key] = icon
   end
   return icon or nil
 end
@@ -420,6 +425,9 @@ end
 
 -- Screens coming and going (lid close, external display) add or drop strips.
 local screenWatcher = hs.screen.watcher.new(function() refreshTimer:start() end)
+-- Light/dark flip: appIcon() picks per style, so just redraw.
+local themeWatcher = hs.distributednotifications.new(render, "AppleInterfaceThemeChangedNotification")
+themeWatcher:start()
 screenWatcher:start()
 
 -- Called by space_hud whenever the current Space index changes (tap fast-path,
@@ -472,6 +480,7 @@ return {
   getTasks = function() return helperTask, compileTask end,
   canvases = canvases,
   screenWatcher = screenWatcher,
+  themeWatcher = themeWatcher,
   refreshTimer = refreshTimer,
   switchRebuildTimer = switchRebuildTimer,
   windowFilter = windowFilter,
