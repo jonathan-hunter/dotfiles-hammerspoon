@@ -1,7 +1,7 @@
 -- ~/.hammerspoon/keybinds_special.lua
 
 -- Reload Hammerspoon config (custom handler, not a standard app launch)
-f19:bind({'shift'}, 'R', function()
+f19:bind({'alt'}, 'R', function()
   hs.alert.show("Config reloaded")
   hs.timer.doAfter(0.05, hs.reload)
 end)
