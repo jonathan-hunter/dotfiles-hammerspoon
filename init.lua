@@ -16,4 +16,5 @@ require("keybinds_window_mgmt")   -- window management: tiling, focus nav, move-
 require("keybinds_special")       -- reload hammerspoon; screenshot; claude voice mode
 require("keybinds_caffeine")      -- Hyper+Opt+C: toggle `caffeinate -s` + menu bar coffee cup
 require("space_hud")              -- space HUD + menu bar taskbar (via space_taskbar)
+require("claude_usage")           -- menu bar: Claude 5-hour / 7-day plan usage
 -- require("hotcorner")              -- lower-right hot corner: new Bear note
