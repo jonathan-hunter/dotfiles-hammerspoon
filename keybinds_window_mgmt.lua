@@ -194,11 +194,18 @@ end
 -- rects, so the gap is 7px wide and its midpoint sits 3.5px left of zoom.
 local ZOOM_TO_GAP_MIDPOINT = 3.5
 
--- Per-app drag anchor, in px in from the window's right edge, at the button
--- row. Claude's sidebar column never takes drags and its width varies, but
--- the top bar is empty just left of the globe / right-sidebar buttons.
-local DRAG_X_FROM_RIGHT = {
-  ["com.anthropic.claudefordesktop"] = 140,
+-- How long to wait for the window to start following the drag before giving
+-- up. Native windows follow at once; Electron (Claude) takes ~120ms, which is
+-- why a fixed 10ms wait switched Space before the drag existed and left the
+-- window behind -- not, as once assumed, a no-drag anchor.
+local DRAG_LATCH_TIMEOUT = 0.6
+local DRAG_LATCH_POLL = 0.01
+local DRAG_NUDGE = 5
+
+-- Apps slow enough to need the nudge-and-poll; everyone else gets the plain
+-- fixed delay, which avoids visibly jiggling their windows.
+local DRAG_LATCH_APPS = {
+  ["com.anthropic.claudefordesktop"] = true,
 }
 
 -- The minimize (yellow) button's rect, or nil if AX does not expose it.
@@ -235,26 +242,46 @@ local function moveWinToSpaceByDrag(win, n)
   if minimize and minimize.x + minimize.w <= zoom.x then
     pt.x = (minimize.x + minimize.w + zoom.x) / 2
   end
-  -- Some apps make the sidebar's whole column no-drag, even while it is
-  -- collapsed, so the gap is dead; press near the right edge instead.
-  local fromRight = DRAG_X_FROM_RIGHT[win:application():bundleID()]
-  if fromRight then
-    local f = win:frame()
-    pt.x = f.x + f.w - fromRight
-  end
   local orig = hs.mouse.absolutePosition()
+  local start = win:frame()
+  local types = hs.eventtap.event.types
+  local nudged = { x = pt.x + DRAG_NUDGE, y = pt.y + DRAG_NUDGE }
 
-  hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseDown, pt):post()
-  -- Async delay instead of hs.timer.usleep, which would freeze the whole event
-  -- loop -- including the F19 key-up callback -- for 10ms while the hyper key
-  -- is still held, and this binding fires precisely while it is held.
-  hs.timer.doAfter(0.01, function()             -- let Dock register the drag
-    switchToSpaceNumber(n)
-    hs.timer.doAfter(0.05, function()
-      hs.eventtap.event.newMouseEvent(hs.eventtap.event.types.leftMouseUp, pt):post()
-      hs.mouse.absolutePosition(orig)
+  local function release()
+    -- Drag back to the press point first so the window lands where it was.
+    hs.eventtap.event.newMouseEvent(types.leftMouseDragged, pt):post()
+    hs.eventtap.event.newMouseEvent(types.leftMouseUp, pt):post()
+    hs.mouse.absolutePosition(orig)
+  end
+
+  hs.eventtap.event.newMouseEvent(types.leftMouseDown, pt):post()
+  -- Async delays instead of hs.timer.usleep, which would freeze the whole
+  -- event loop -- including the F19 key-up callback -- while the hyper key is
+  -- still held, and this binding fires precisely while it is held.
+  if not DRAG_LATCH_APPS[win:application():bundleID()] then
+    hs.timer.doAfter(0.01, function()           -- let Dock register the drag
+      switchToSpaceNumber(n)
+      hs.timer.doAfter(0.05, release)
     end)
-  end)
+    return
+  end
+  -- Nudge the drag and poll until the window follows: only then does Dock
+  -- carry it across the Space switch.
+  local deadline = hs.timer.secondsSinceEpoch() + DRAG_LATCH_TIMEOUT
+  local function poll()
+    hs.eventtap.event.newMouseEvent(types.leftMouseDragged, nudged):post()
+    local f = win:frame()
+    if f.x ~= start.x or f.y ~= start.y then
+      switchToSpaceNumber(n)
+      hs.timer.doAfter(0.05, release)
+    elseif hs.timer.secondsSinceEpoch() > deadline then
+      release()
+      hs.alert.show("Couldn't grab window to move it")
+    else
+      hs.timer.doAfter(DRAG_LATCH_POLL, poll)
+    end
+  end
+  poll()
 end
 
 --- Move focused window to space N (1..10)

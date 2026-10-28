@@ -54,5 +54,6 @@ end)
 
 - `WINDOW_FOCUS_DELAY` in `keybinds_window_mgmt.lua` (0.1s) - delay after window close before auto-focus
 - `NAVIGATION_REFRESH_DELAY` in `keybinds_window_mgmt.lua` (0.12s) - coalesces window-list updates
+- `DRAG_LATCH_TIMEOUT` in `keybinds_window_mgmt.lua` (0.6s) - for apps in `DRAG_LATCH_APPS` (Claude only), move-to-space waits until the window actually follows the synthetic drag before switching Space; Electron apps (Claude) take ~120ms to latch, so a fixed short delay leaves the window behind
 - `NAVIGATION_SPACE_REFRESH_DELAY` in `keybinds_window_mgmt.lua` (0.20s) - rebuilds navigation candidates after a Space transition
 - `SPACE_FOCUS_DELAY` in `space_taskbar.lua` (0.30s) - lets a taskbar-click Space switch settle before AX focuses the clicked app (mirrors `CYCLE_SPACE_FOCUS_DELAY` in `hyperkey.lua`)
