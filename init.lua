@@ -17,4 +17,5 @@ require("keybinds_special")       -- reload hammerspoon; screenshot; claude voic
 require("keybinds_caffeine")      -- Hyper+Opt+C: toggle `caffeinate -s` + menu bar coffee cup
 require("space_hud")              -- space HUD + menu bar taskbar (via space_taskbar)
 require("claude_usage")           -- menu bar: Claude 5-hour / 7-day plan usage
+require("mail_junk")              -- every 5 min: mark Mail's Junk as read (AppleScript)
 -- require("hotcorner")              -- lower-right hot corner: new Bear note
