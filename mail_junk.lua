@@ -1,5 +1,5 @@
 -- Every 5 min, while Mail is running, mark Junk as read via an AppleScript.
-local script = os.getenv("HOME") .. "/Scripts/mark_junk_read.applescript"
+local script = hs.configdir .. "/helpers/mark_junk_read.applescript"
 
 local function markJunkRead()
   if hs.application.get("Mail") then
