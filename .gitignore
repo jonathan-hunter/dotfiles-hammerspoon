@@ -14,3 +14,7 @@ DO_NOT_PUSH.md
 
 # Account/mailbox names for mail_junk.lua; kept local so they never reach git
 helpers/mail_extra_mailboxes.txt
+
+# Local AI tooling state
+.claude/
+.superpowers/
