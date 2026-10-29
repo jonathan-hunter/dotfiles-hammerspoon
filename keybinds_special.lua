@@ -2,7 +2,7 @@
 
 -- Reload Hammerspoon config (custom handler, not a standard app launch)
 f19:bind({'alt'}, 'R', function()
-  hs.alert.show("Config reloaded")
+  notify("Config reloaded")
   hs.timer.doAfter(0.05, hs.reload)
 end)
 
@@ -12,7 +12,7 @@ end)
 f19:bind({'shift', 'alt'}, 'Q', function()
   hs.task.new("/usr/bin/shortcuts", function(exitCode)
     if exitCode ~= 0 then
-      hs.alert.show("Quit All Apps shortcut failed")
+      notify("Quit All Apps shortcut failed")
     end
   end, { "run", "Quit All Apps" }):start()
 end)
@@ -25,7 +25,7 @@ end)
 -- Karabiner's caps->F19 mapping, so this can only fire while it still works.
 f19:bind({'shift', 'alt'}, 'K', function()
   hs.task.new("/bin/sh", function(exitCode)
-    hs.alert.show(exitCode == 0 and "Karabiner restarted" or "Karabiner restart failed")
+    notify(exitCode == 0 and "Karabiner restarted" or "Karabiner restart failed")
   end, { "-c", "for a in Karabiner-Core-Service-rev2 karabiner_console_user_server; do " ..
                  "launchctl kickstart -k \"gui/$(id -u)/org.pqrs.service.agent.$a\" || exit 1; done" }):start()
 end)

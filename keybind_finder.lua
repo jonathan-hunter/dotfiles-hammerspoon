@@ -34,6 +34,6 @@ f19:bind({}, 'F', function()
 
   local ok, result = hs.applescript.applescript(script)
   if not ok then
-    hs.alert.show("Finder error: " .. tostring(result))
+    notify("Finder error: " .. tostring(result))
   end
 end)

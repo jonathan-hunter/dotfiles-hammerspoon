@@ -9,6 +9,13 @@ local hyperkey = require("hyperkey")  -- hyperkey logic
 f19 = hyperkey.modal
 bindApp = hyperkey.bindApp
 
+-- Status messages go out as real macOS notifications, withdrawn after a few
+-- seconds so toggles like caps lock don't pile up in Notification Center.
+local NOTIFY_SECONDS = 4
+function notify(message)
+  hs.notify.new({ title = message, withdrawAfter = NOTIFY_SECONDS }):send()
+end
+
 -- Load other keybind modules
 require("keybinds_apps")          -- app keybinds
 require("keybind_finder")         -- finder launch/focus logic and keybind

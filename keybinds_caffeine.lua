@@ -68,12 +68,12 @@ local function startCaffeine()
     if caffeineTask then
       caffeineTask = nil
       showIndicator(false)
-      hs.alert.show("Caffeinate stopped")
+      notify("Caffeinate stopped")
     end
   end, { "-s" })
 
   if not task or not task:start() then
-    hs.alert.show("Caffeinate failed to start")
+    notify("Caffeinate failed to start")
     return false
   end
 
@@ -85,9 +85,9 @@ end
 toggleCaffeine = function()
   if caffeineTask then
     stopCaffeine()
-    hs.alert.show("Caffeinate off")
+    notify("Caffeinate off")
   elseif startCaffeine() then
-    hs.alert.show("Caffeinate on")
+    notify("Caffeinate on")
   end
 end
 

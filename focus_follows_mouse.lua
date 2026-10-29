@@ -101,7 +101,7 @@ end)
 f19:bind({ 'alt' }, 'F', function()
   enabled = not enabled
   if enabled then tap:start() else tap:stop(); timer:stop() end
-  hs.alert.show("Focus follows mouse: " .. (enabled and "on" or "off"))
+  notify("Focus follows mouse: " .. (enabled and "on" or "off"))
 end)
 
 return { tap = tap, timer = timer, watchdog = tapWatchdog }  -- held in package.loaded so nothing is GC'd

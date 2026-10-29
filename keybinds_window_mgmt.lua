@@ -276,7 +276,7 @@ local function moveWinToSpaceByDrag(win, n)
       hs.timer.doAfter(0.05, release)
     elseif hs.timer.secondsSinceEpoch() > deadline then
       release()
-      hs.alert.show("Couldn't grab window to move it")
+      notify("Couldn't grab window to move it")
     else
       hs.timer.doAfter(DRAG_LATCH_POLL, poll)
     end

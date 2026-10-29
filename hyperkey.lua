@@ -57,7 +57,7 @@ local function registerTap()
   local now = hs.timer.secondsSinceEpoch()
   if now - lastTapAt < DOUBLE_TAP_WINDOW then
     lastTapAt = 0  -- consume, so a third tap starts a fresh pair
-    hs.alert.show(hs.hid.capslock.toggle() and "CAPS LOCK ON" or "caps lock off")
+    notify(hs.hid.capslock.toggle() and "CAPS LOCK ON" or "caps lock off")
   else
     lastTapAt = now
   end
