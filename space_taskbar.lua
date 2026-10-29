@@ -38,6 +38,7 @@ local iconCache = {}    -- bundleID -> hs.image (false = known missing)
 -- { bundles = {...}, spaceId = n }. Each display has its own Spaces.
 local models = {}
 local globalNumber = {}  -- spaceId -> ctrl+N Desktop number (counts across displays)
+local iconRank = {}      -- spaceId -> { bundleID -> position at the last rebuild }
 local currentSpaceId = nil
 
 local canvases = {}   -- screen UUID -> { [1] left / [2] right of the notch }, built lazily
@@ -224,7 +225,7 @@ local function placeAndRender()
     perScreen[scr:getUUID()] = perSpace
   end
 
-  local rebuilt = {}
+  local rebuilt, rankRebuilt = {}, {}
   for uuid, perSpace in pairs(perScreen) do
     local model = {}
     for i, space in ipairs(perSpace) do
@@ -236,11 +237,21 @@ local function placeAndRender()
           bundles[#bundles + 1] = bundle
         end
       end
+      -- windowsForSpace lists front-to-back, so focusing a window would jump
+      -- its app to the head of the group. Keep last rebuild's order instead;
+      -- newcomers go after it, in stacking order.
+      local prev, key = iconRank[space.spaceId] or {}, {}
+      for idx, b in ipairs(bundles) do key[b] = prev[b] or (1e6 + idx) end
+      table.sort(bundles, function(a, b) return key[a] < key[b] end)
+      local rank = {}
+      for idx, b in ipairs(bundles) do rank[b] = idx end
+      rankRebuilt[space.spaceId] = rank
       model[i] = { bundles = bundles, spaceId = space.spaceId }
     end
     rebuilt[uuid] = model
   end
   models = rebuilt
+  iconRank = rankRebuilt  -- Desktops that vanished drop out
 
   -- ctrl+N numbers Desktops across displays in Mission Control's display order.
   globalNumber = {}
@@ -423,6 +434,28 @@ handleClick = function(x, uuid, half)
   end
 end
 
+-- Hover (driven by focus_follows_mouse once the pointer rests at screen point
+-- `p`): an app icon acts like a click, unless that app is already in front on
+-- its own Desktop. Desktop numbers and "+n" stay click-only, so passing over
+-- one never flips Spaces.
+local function hoverAt(p)
+  for uuid, pair in pairs(canvases) do
+    for half, cv in pairs(pair) do
+      local f = cv:frame()
+      if cv:isShowing() and p.x >= f.x and p.x < f.x + f.w and p.y >= f.y and p.y < f.y + f.h then
+        local spaceId, bundle = hitTest(p.x - f.x, uuid, half)
+        if not bundle then return end
+        local front = hs.application.frontmostApplication()
+        if spaces.activeSpaceOnScreen(uuid) == spaceId and front and front:bundleID() == bundle then
+          return
+        end
+        handleClick(p.x - f.x, uuid, half)
+        return
+      end
+    end
+  end
+end
+
 -- Screens coming and going (lid close, external display) add or drop strips.
 local screenWatcher = hs.screen.watcher.new(function() refreshTimer:start() end)
 -- Light/dark flip: appIcon() picks per style, so just redraw.
@@ -476,6 +509,7 @@ return {
   getModel = function() return models[hs.screen.primaryScreen():getUUID()] or {} end,
   -- exported for programmatic testing of click targeting via the hs IPC CLI
   hitTest = hitTest,
+  hoverAt = hoverAt,  -- focus_follows_mouse's menu bar hover
   -- keeps the in-flight hs.task objects reachable so they aren't collected
   getTasks = function() return helperTask, compileTask end,
   canvases = canvases,

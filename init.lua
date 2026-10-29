@@ -18,4 +18,4 @@ require("keybinds_caffeine")      -- Hyper+Opt+C: toggle `caffeinate -s` + menu 
 require("space_hud")              -- space HUD + menu bar taskbar (via space_taskbar)
 require("claude_usage")           -- menu bar: Claude 5-hour / 7-day plan usage
 require("mail_junk")              -- every 5 min: mark Mail's Junk as read (AppleScript)
--- require("hotcorner")              -- lower-right hot corner: new Bear note
+require("focus_follows_mouse")    -- raise + focus the window the pointer settles in; Hyper+Opt+F toggles
