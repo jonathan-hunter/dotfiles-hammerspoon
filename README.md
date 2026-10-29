@@ -1,74 +1,89 @@
 # Hammerspoon Configuration
 
-A modular Hammerspoon configuration using a custom hyperkey (Caps Lock → F19) for application launching, window management, and custom keybindings.
+A modular Hammerspoon configuration built around a hyperkey (Caps Lock → F19) for app launching, window management, and a few menu bar utilities.
 
 ## Features
 
-- **Hyperkey Modal**: Caps Lock mapped to F19 acts as a pure modifier key — hold and press another key to trigger custom keybindings
-- **Application Launcher**: Quick launch/focus apps with single keystrokes; pressing again while the app is frontmost cycles through its windows
-- **Window Management**: Native tiling, vim-style focus navigation, and move-window-to-space
-- **Space Taskbar**: Menu bar strip of app icons grouped by Desktop number, with the current Space highlighted, a click-to-jump dropdown, and a transient on-screen HUD when switching spaces
-- **Special Functions**: Config reload, screenshots, voice mode toggle
+- **Hyperkey Modal**: Caps Lock mapped to F19 acts as a pure modifier — hold it and press another key. Double-tap it to toggle the real Caps Lock.
+- **Application Launcher**: Launch or focus apps with one keystroke; pressing again while the app is frontmost cycles through its windows
+- **Window Management**: Native tiling, one-shot multi-window layouts, vim-style focus navigation, and move-window-to-Space
+- **Space Taskbar**: Menu bar strip of app icons grouped by Desktop on every display; click or hover to jump
+- **Focus Follows Mouse**: Focuses the window the pointer settles in, without stealing focus while sweeping across windows
+- **Menu Bar Utilities**: Caffeinate toggle, Claude plan usage
+- **Mail Junk**: Keeps Mail's junk folders marked as read
 
 ## Prerequisites
 
-- [Hammerspoon](https://www.hammerspoon.org/) installed
-- [Karabiner-Elements](https://karabiner-elements.pqrs.org/) for remapping Caps Lock → F19
-  - Open Karabiner-Elements
-  - Go to **Simple Modifications** → **For all devices**
-  - Map: `caps_lock` → `F19`
+- [Hammerspoon](https://www.hammerspoon.org/), with Accessibility permission
+- [Karabiner-Elements](https://karabiner-elements.pqrs.org/) to remap Caps Lock → F19
+  - **Simple Modifications** → **For all devices** → `caps_lock` → `f19`
+- Xcode Command Line Tools (`xcode-select --install`), so `helpers/windowlist.swift` can be compiled on first load
+
+### Mission Control Settings
+
+For consistent Desktop numbering and ctrl+N destinations:
+
+- Enable **Displays have separate Spaces**.
+- Disable **Automatically rearrange Spaces based on most recent use**.
+- In **Keyboard Shortcuts → Mission Control**, enable **Switch to Desktop 1–9** (ctrl+1..9) and assign ctrl+0 to Desktop 10.
+- Enabling **Reduce motion** is recommended for faster transitions.
 
 ## File Structure
 
 ```text
 ~/.hammerspoon/
-├── init.lua                    # Main entry point, loads all modules
-├── hyperkey.lua                # Core hyperkey modal logic and helper functions
-├── keybinds_apps.lua           # Application launch/focus keybindings
-├── keybind_finder.lua          # Custom Finder window handler
-├── keybinds_window_mgmt.lua    # Tiling, focus navigation, move-to-space
-├── keybinds_special.lua        # Special function keybindings
-├── space_state.lua             # Shared cached Mission Control Space IDs
-├── space_hud.lua               # Transient Space HUD; feeds the taskbar current-Space updates
-├── space_taskbar.lua           # Menu bar taskbar: app icons grouped by Space
-└── helpers/windowlist.swift    # CGWindowList helper (sees windows on all Spaces)
+├── init.lua                     # Entry point: loads modules, defines notify()
+├── hyperkey.lua                 # Hyperkey modal, bindApp(), caps lock double tap
+├── keybinds_apps.lua            # App launch/focus bindings
+├── keybind_finder.lua           # Finder handler (opens a window if none exist)
+├── keybinds_window_mgmt.lua     # Tiling, layouts, focus navigation, move-to-Space
+├── keybinds_special.lua         # Reload, plain-text paste, F13/F14, Shortcuts, Karabiner restart
+├── keybinds_caffeine.lua        # caffeinate toggle + menu bar coffee cup
+├── focus_follows_mouse.lua      # Focus the window under a settled pointer
+├── claude_usage.lua             # Menu bar Claude plan usage
+├── mail_junk.lua                # Mark Mail junk folders as read
+├── space_state.lua              # Shared cached Space IDs
+├── space_hud.lua                # Watches Space changes, feeds the taskbar
+├── space_taskbar.lua            # Menu bar taskbar: app icons grouped by Desktop
+├── assets/                      # Menu bar images
+└── helpers/
+    ├── windowlist.swift         # CGWindowList helper (sees windows on all Spaces)
+    ├── mark_junk_read.applescript
+    └── coffee-icon.swift        # Dev-time only: renders the coffee cup asset
 ```
 
 ## Keybindings
 
-### Application Launcher (Hyper + Key)
+`Hyper` = hold Caps Lock.
 
-Pressing a key launches or focuses the app. Pressing it again while that app is already frontmost cycles through the app's windows on the current Space (minimized windows are skipped, like cmd+backtick).
+### Application Launcher
 
-| Key | App       | Shift+Key | App                  |
-| --- | --------- | --------- | -------------------- |
-| `1` | 1Password |           |                      |
-| `A` | Claude    | `Shift+A` | Google Gemini        |
-| `B` | Brave     | `Shift+B` | Safari               |
-| `C` | Calendar  | `Shift+C` | Visual Studio Code   |
-| `E` | Mail      | `Shift+E` | Microsoft Excel      |
-| `F` | Finder    | `Shift+F` | FileZilla            |
-| `N` | Bear      |           |                      |
-| `O` | Obsidian  | `Shift+O` | Protégé              |
-| `P` | Podcasts  | `Shift+P` | Microsoft PowerPoint |
-| `R` | Reminders |           |                      |
-| `S` | Slack     |           |                      |
-| `T` | iTerm     | `Shift+T` | Music                |
-| `W` | WhatsApp  | `Shift+W` | Microsoft Word       |
-| `Z` | Zoom      | `Shift+Z` | Zotero               |
+Pressing a key launches or focuses the app. Pressing it again while that app is frontmost cycles through its windows on the current Space (minimized windows are skipped, like cmd+backtick).
+
+| Key | Hyper+Key | Hyper+Shift+Key      | Hyper+Opt+Key |
+| --- | --------- | -------------------- | ------------- |
+| `1` | 1Password |                      |               |
+| `A` | Claude    | Google Gemini        |               |
+| `B` | Firefox   | Brave Browser        | Brain.fm      |
+| `C` | Calendar  | Visual Studio Code   |               |
+| `E` | Mail      | Microsoft Excel      |               |
+| `F` | Finder    | FileZilla            |               |
+| `N` | Bear      |                      | NetNewsWire   |
+| `O` |           | Protégé              |               |
+| `P` | Podcasts  | Microsoft PowerPoint |               |
+| `R` | Reminders |                      |               |
+| `S` | Slack     | Shortcuts            |               |
+| `T` | Ghostty   | Music                | Tailscale     |
+| `W` | WhatsApp  | Microsoft Word       |               |
+| `Z` | Zotero    | Zoom                 |               |
 
 ### Window Management
 
-#### Focus Navigation (Hyper + hjkl)
+#### Focus Navigation
 
-- `Hyper+H` - Focus window to the left
-- `Hyper+J` - Focus window below
-- `Hyper+K` - Focus window above
-- `Hyper+L` - Focus window to the right
+- `Hyper+H/J/K/L` - Focus the window to the left / below / above / right
 
-#### Tiling (Hyper+Shift+Key)
-
-Native Hammerspoon tiling — sets the focused window's frame to a fraction of the screen:
+#### Tiling (focused window)
 
 - `Hyper+Shift+]` / `[` - Right half / left half
 - `Hyper+Shift+G/H` - Left three-quarters / left quarter (full height)
@@ -77,83 +92,90 @@ Native Hammerspoon tiling — sets the focused window's frame to a fraction of t
 - `Hyper+Shift+N/M/,` - Bottom left quarter / bottom half / bottom right quarter
 - `Hyper+Shift+Space` - Full screen
 
-#### Move Window to Space (Hyper+Shift+1..9)
+#### Layouts (all windows on the screen)
 
-Drags the focused window's titlebar while invoking macOS's ctrl+N shortcut, sending the window to Desktop N and following it. The drag uses non-blocking timers so Hammerspoon remains responsive throughout the switch.
+The focused window takes the first slot; extra windows wrap around the pattern.
 
-### Special Functions
+- `Hyper+Opt+1` - Monocle
+- `Hyper+Opt+2` - Two columns
+- `Hyper+Opt+3` - 1:3:1 columns, focused window in the centre
+- `Hyper+Opt+4` - 2x2 grid
+- `Hyper+Shift+Opt+1..5` - N equal columns
 
-- `Hyper+Shift+R` - Reload Hammerspoon config
-- `Hyper+Opt+C` - Toggle `caffeinate -s` (keep the system awake). A highlighted coffee cup appears in the menu bar while it is active — the cup is knocked out of a filled blue pill, so it reads as "on" at a glance; clicking it also switches it off. The child process is terminated on config reload and on quit. Note that `-s` is only honoured on AC power — on battery the assertion is held but has no effect.
-- `Cmd+Shift+V` - Paste as plain text (preserves original clipboard)
-- `F13` - Screenshot to clipboard (⌘⇧4)
-- `F14` - Toggle Caps Lock (for Claude voice mode)
+#### Move Window to Space
 
-### Auto-Focus Behavior
+- `Hyper+Shift+1..9,0` - Send the focused window to Desktop 1–10 and follow it
 
-When a window is closed and macOS has not selected a replacement, the next visible window is focused after a 0.1s delay. Directional navigation reuses a cached current-Space window list rather than querying every application on every keypress.
+Drags the window's titlebar while invoking ctrl+N, using non-blocking timers so Hammerspoon stays responsive.
 
-### Mission Control Settings
+### Other
 
-For numbered Space caching and consistent ctrl+N destinations:
+- `Hyper+Opt+R` - Reload config
+- `Hyper+Opt+C` - Toggle `caffeinate -s` (see below)
+- `Hyper+Opt+F` - Toggle focus follows mouse (on by default)
+- `Hyper+Shift+Opt+Q` - Run the **Quit All Apps** Shortcut (create one with that name in Shortcuts.app)
+- `Hyper+Shift+Opt+K` - Restart Karabiner-Elements' user agents (no sudo)
+- Double-tap `Hyper` - Toggle Caps Lock, with a notification since the LED won't light
+- `Cmd+Shift+V` - Paste as plain text (preserves the original clipboard)
+- `Cmd+Shift+Return` - Open a new line above the caret
+- `F13` - Screenshot a selection to the clipboard (⌘⇧4)
+- `F14` - Toggle Caps Lock
 
-- Enable **Displays have separate Spaces**.
-- Disable **Automatically rearrange Spaces based on most recent use**.
-- Enabling **Reduce motion** is recommended for faster visual transitions.
+## Modules
 
 ### Space Taskbar
 
-The menu bar shows each numbered Desktop with the icons of the apps on it (capped at 4 per Space, `+n` for overflow), highlighting the current Space. Clicking it opens a dropdown listing every Desktop and its apps — select one to jump there via ctrl+N.
+The menu bar on each display shows that display's Desktops with the icons of the apps on them (up to 4 per Desktop, `+n` for overflow), highlighting the visible Space. Clicking an app icon switches to that Desktop and focuses the app's window there; clicking a Desktop number just switches. Hovering an icon (with focus follows mouse on) does the same as clicking it. The taskbar hides on full-screen Spaces and in Mission Control.
 
-Window-to-app mapping for Spaces you haven't visited comes from `helpers/windowlist`, a small Swift binary using `CGWindowListCopyWindowInfo` (the Accessibility API only sees the current Space). It is compiled automatically from `helpers/windowlist.swift` on config load if missing, and runs asynchronously — placement lookups and re-renders happen only on debounced window events, never during a Space transition.
+The Accessibility API only sees the current Space, so window placement on other Spaces comes from `helpers/windowlist`, a small Swift binary using `CGWindowListCopyWindowInfo`. It's compiled automatically on config load if the binary is missing — recompile by hand after editing the source:
 
-## Configuration
-
-### Adjusting Window Focus Delay
-
-Edit `keybinds_window_mgmt.lua`:
-
-```lua
-local WINDOW_FOCUS_DELAY = 0.1  -- Delay after window close (seconds)
+```sh
+swiftc -O -o helpers/windowlist helpers/windowlist.swift
 ```
 
-## How It Works
+### Focus Follows Mouse
 
-### Hyperkey Modal
+Raises and focuses the window the pointer comes to rest in. Fast sweeps across windows don't change focus. It ignores the menu bar, Dock, panels, open context menus, held mouse buttons, and moments when the hyperkey is held.
 
-The hyperkey system uses Hammerspoon's modal hotkey functionality:
+### Caffeine
 
-1. Pressing F19 enters the modal — bindings become active
-2. Releasing F19 exits the modal — bindings become inactive
+`Hyper+Opt+C` runs `caffeinate -s` and shows a highlighted coffee cup in the menu bar; clicking the cup also switches it off. The child process is terminated on reload and quit. `-s` is only honoured on AC power.
 
-### Helper Functions
+### Claude Usage
 
-`bindApp(mods, key, app)` — binds `Hyper+mods+key` to launch or focus an application.
+Shows Claude plan usage (`5h% · 7d%`) in the menu bar, polled every 5 minutes; clicking it focuses the Claude app. It reads the OAuth token that [Claude Code](https://claude.com/claude-code) stores in the Keychain, so Claude Code must be installed and signed in. The endpoint is undocumented and may change. Remove `require("claude_usage")` from `init.lua` if you don't want it.
+
+### Mail Junk
+
+Every 5 minutes while Mail is running, and whenever Mail is focused, marks every account's junk folder (`Junk`, `Junk Email` or `[Gmail]/Spam`) as read. To mark other mailboxes read too, create `helpers/mail_extra_mailboxes.txt` (gitignored) with one `Account/Mailbox` per line:
+
+```text
+# Account name as shown in Mail / mailbox path
+Work/Notifications
+```
 
 ## Customization
 
-### Adding New App Keybindings
+### Adding App Keybindings
 
-Edit `keybinds_apps.lua`:
+In `keybinds_apps.lua`:
 
 ```lua
-bindApp({}, 'X', "Your App Name")
-bindApp({'shift'}, 'X', "Another App")
+bindApp({}, 'X', "Your App Name")        -- Hyper+X
+bindApp({'shift'}, 'X', "Another App")   -- Hyper+Shift+X
 ```
 
-### Adding Custom Window Management
+### Adding Custom Bindings
 
-Edit `keybinds_window_mgmt.lua`:
+Bind directly to the `f19` modal:
 
 ```lua
 f19:bind({}, "key", function()
-  -- Your custom window management code
+  -- your code
 end)
 ```
 
-## Version
-
-Current version: 1.0
+Modules show status with the global `notify(message)`, which posts a macOS notification that is withdrawn after a few seconds.
 
 ## License
 
