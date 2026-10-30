@@ -31,6 +31,14 @@ local GROUP_GAP = 7
 local EDGE_PAD = 3
 local MAX_ICONS_PER_SPACE = 4     -- overflow renders as an unclickable "+n"
 local NOTCH_WIDTH = 220              -- calibration knob: notch (~200pt) plus breathing room
+local MENU_CLEARANCE = 8             -- calibration knob: gap kept from app menus / status items
+-- Beside the notch the strip shrinks a step at a time until it fits between
+-- the app menus and the status items: icon caps for { the visible Desktop,
+-- every other Desktop }.
+local FIT_STEPS = {
+  { MAX_ICONS_PER_SPACE, MAX_ICONS_PER_SPACE }, { 3, 3 }, { 2, 2 }, { 1, 1 },
+  { MAX_ICONS_PER_SPACE, 0 }, { 2, 0 }, { 1, 0 }, { 0, 0 },
+}
 
 local windowApps = {}   -- windowID -> bundleID
 local iconCache = {}    -- bundleID -> hs.image (false = known missing)
@@ -40,6 +48,8 @@ local models = {}
 local globalNumber = {}  -- spaceId -> ctrl+N Desktop number (counts across displays)
 local iconRank = {}      -- spaceId -> { bundleID -> position at the last rebuild }
 local currentSpaceId = nil
+local statusItems = {}   -- { x, y } of every menu bar status item, from the helper
+local appMenusRight = 0  -- front app's menus' right edge, from its screen's left
 
 local canvases = {}   -- screen UUID -> { [1] left / [2] right of the notch }, built lazily
 
@@ -74,14 +84,66 @@ local function hasNotch(scr)
   return scr:name():find("Built%-in") and scr:frame().y - scr:fullFrame().y >= 30
 end
 
+-- Measure where the front app's menus end. Returns true if that moved.
+local function measureAppMenus()
+  local app = hs.application.frontmostApplication()
+  -- AX into our own process from the main thread can deadlock; keep the last value
+  if not app or app:pid() == hs.processInfo.processID then return false end
+  local ax = hs.axuielement.applicationElement(app)
+  if not ax then return false end
+  ax:setTimeout(0.25)  -- a hung app mustn't stall Hammerspoon
+  local bar = ax:attributeValue("AXMenuBar")
+  local lo, hi
+  for _, item in ipairs(bar and bar:attributeValue("AXChildren") or {}) do
+    local p, s = item:attributeValue("AXPosition"), item:attributeValue("AXSize")
+    if p and s then
+      lo, hi = math.min(lo or p.x, p.x), math.max(hi or 0, p.x + s.w)
+    end
+  end
+  if not lo then return false end
+  -- Every display shows the same menus, so keep the edge relative to the screen.
+  for _, scr in ipairs(hs.screen.allScreens()) do
+    local f = scr:fullFrame()
+    if lo >= f.x and lo < f.x + f.w then
+      local right = hi - f.x
+      if right == appMenusRight then return false end
+      appMenusRight = right
+      return true
+    end
+  end
+  return false
+end
+
+-- Free width { left, right } of a notched screen's menu bar beside the notch.
+-- ponytail: status items are only re-read on model rebuilds, so one that
+-- widens in between (claude_usage text) can briefly overlap the strip.
+local function notchRooms(scr)
+  local full = scr:fullFrame()
+  local notchLeft = full.x + full.w / 2 - NOTCH_WIDTH / 2
+  local notchRight = notchLeft + NOTCH_WIDTH
+  local statusLeft = full.x + full.w
+  for _, item in ipairs(statusItems) do
+    if item.x >= notchRight and item.x < statusLeft and item.y < scr:frame().y then
+      statusLeft = item.x
+    end
+  end
+  return {
+    notchLeft - (full.x + appMenusRight) - MENU_CLEARANCE,
+    statusLeft - notchRight - MENU_CLEARANCE,
+  }
+end
+
 -- Assign x/width to groups[first..last], recording which half they sit in.
--- Returns the strip's total width.
-local function layout(model, first, last, half)
-  local x = EDGE_PAD
+-- `caps` limits icons per group (`active` for the visible Desktop, `other`
+-- for the rest); `x0` shifts the strip, for clipping. Returns the strip's total width.
+local function layout(model, first, last, half, caps, x0)
+  local x = x0 or EDGE_PAD
   for i = first, last do
     local group = model[i]
-    local shown = math.min(#group.bundles, MAX_ICONS_PER_SPACE)
-    local extra = #group.bundles - shown
+    local cap = group.spaceId == caps.activeId and caps.active or caps.other
+    local shown = math.min(#group.bundles, cap)
+    -- "+n" only at full size; once squeezed, its width buys more as icons
+    local extra = cap == MAX_ICONS_PER_SPACE and #group.bundles - shown or 0
     group._shown, group._extra, group._x, group._half = shown, extra, x, half
     local w = NUMBER_WIDTH + shown * (ICON_SIZE + ICON_GAP)
     if extra > 0 then w = w + 8 + 5 * #tostring(extra) end
@@ -114,7 +176,7 @@ local function buildElements(model, first, last, activeId)
     elements[#elements + 1] = {
       type = "text", text = tostring(i % 10),  -- Desktop 10 reads as 0, matching ctrl+0
       textSize = NUMBER_TEXT_SIZE, textFont = NUMBER_FONT,
-      textColor = (group._shown > 0 or group.spaceId == activeId) and textColor or dimColor,
+      textColor = (#group.bundles > 0 or group.spaceId == activeId) and textColor or dimColor,
       frame = { x = group._x, y = 2, w = NUMBER_WIDTH, h = 18 },
     }
     local ix = group._x + NUMBER_WIDTH
@@ -141,11 +203,32 @@ end
 
 local handleClick  -- defined with the click code below
 
+-- Pick the first FIT_STEPS step, and the most even split point `mid`
+-- (Desktops 1..mid left of the notch), that fits both `rooms`. If even the
+-- last step overflows, return its least-overflowing split; renderScreen clips.
+local function fitBesideNotch(model, activeId, rooms)
+  local n = #model
+  local best, caps
+  for _, step in ipairs(FIT_STEPS) do
+    caps = { activeId = activeId, active = step[1], other = step[2] }
+    local bestCost
+    for mid = 0, n do
+      local over = math.max(0, layout(model, 1, mid, 1, caps) - rooms[1])
+                 + math.max(0, layout(model, mid + 1, n, 2, caps) - rooms[2])
+      -- any overflow outranks balance
+      local cost = (over > 0 and 1e4 + over or 0) + math.abs(mid - n / 2)
+      if not bestCost or cost < bestCost then best, bestCost = mid, cost end
+    end
+    if bestCost < 1e4 then break end
+  end
+  return best, caps
+end
+
 -- Draw each screen's Desktops into borderless canvases on its menu bar. On a
--- notched screen they split into two halves hugging either side of the notch;
--- on any other screen one strip is centred. Canvases get no status-item
--- placement, so they are positioned from the screen frame, and clicks arrive
--- in canvas-local x.
+-- notched screen they split into two halves hugging either side of the notch,
+-- shrunk to fit between the app menus and the status items; on any other
+-- screen one strip is centred. Canvases get no status-item placement, so
+-- they are positioned from the screen frame, and clicks arrive in canvas-local x.
 local function renderScreen(scr, uuid, activeId)
   local model = models[uuid] or {}
   -- A full-screen app's Space has no menu bar to sit in, so stand aside there.
@@ -153,7 +236,12 @@ local function renderScreen(scr, uuid, activeId)
   local notch = hasNotch(scr)
   local full = scr:fullFrame()
   local menuH = math.max(scr:frame().y - full.y, BAR_HEIGHT)  -- 0 when auto-hidden
-  local mid = notch and math.ceil(#model / 2) or #model
+  local caps = { activeId = activeId, active = MAX_ICONS_PER_SPACE, other = MAX_ICONS_PER_SPACE }
+  local mid, rooms = #model, nil
+  if notch then
+    rooms = notchRooms(scr)
+    mid, caps = fitBesideNotch(model, activeId, rooms)
+  end
   local ranges = notch and { { 1, mid }, { mid + 1, #model } } or { { 1, #model } }
   canvases[uuid] = canvases[uuid] or {}
   for half = 1, 2 do
@@ -168,10 +256,17 @@ local function renderScreen(scr, uuid, activeId)
       cv:mouseCallback(function(_, msg, _, x) if msg == "mouseUp" then handleClick(x, uuid, half) end end)
       canvases[uuid][half] = cv
     end
-    if fullscreen or not r or r[1] > r[2] then
+    local room = rooms and rooms[half] or math.huge
+    if fullscreen or not r or r[1] > r[2] or room < 1 then
       cv:hide()
     else
-      local w = layout(model, r[1], r[2], half)
+      local w = layout(model, r[1], r[2], half, caps)
+      if w > room then
+        -- Even the smallest step overflows: clip the end farthest from the
+        -- notch rather than cover the menus.
+        if half == 1 then layout(model, r[1], r[2], half, caps, EDGE_PAD - (w - room)) end
+        w = room
+      end
       local elements = buildElements(model, r[1], r[2], activeId)
       -- near-invisible backing so clicks in the gaps land on the canvas, not through it
       table.insert(elements, 1, {
@@ -264,6 +359,7 @@ local function placeAndRender()
       end
     end
   end
+  measureAppMenus()  -- a just-launched app fills its menus after activating
   render()
 end
 
@@ -297,13 +393,21 @@ local function rebuildModel()
       local reported = nil
       if exitCode == 0 and stdOut then
         reported = {}
-        for id, bundle in stdOut:gmatch("(%d+)\t([^\t\n]+)\t[^\n]+") do
-          local wid = tonumber(id)
-          if wid then
-            reported[wid] = true
-            windowApps[wid] = bundle
+        local items = {}
+        for line in stdOut:gmatch("[^\n]+") do
+          local sx, sy = line:match("^status\t(%-?%d+)\t(%-?%d+)$")
+          if sx then
+            items[#items + 1] = { x = tonumber(sx), y = tonumber(sy) }
+          else
+            local id, bundle = line:match("^(%d+)\t([^\t]+)\t")
+            local wid = tonumber(id)
+            if wid then
+              reported[wid] = true
+              windowApps[wid] = bundle
+            end
           end
         end
+        statusItems = items
       end
       -- Swept after the helper's snapshot, so a window created since then is
       -- still marked and doesn't flicker out in the prune.
@@ -462,6 +566,11 @@ local screenWatcher = hs.screen.watcher.new(function() refreshTimer:start() end)
 local themeWatcher = hs.distributednotifications.new(render, "AppleInterfaceThemeChangedNotification")
 themeWatcher:start()
 screenWatcher:start()
+-- App switch: its menus are a different width, so re-fit beside the notch.
+local appWatcher = hs.application.watcher.new(function(_, event)
+  if event == hs.application.watcher.activated and measureAppMenus() then render() end
+end)
+appWatcher:start()
 
 -- Called by space_hud whenever the current Space index changes (tap fast-path,
 -- watcher, or verify timer). Only moves the highlight -- no IPC -- then
@@ -515,6 +624,7 @@ return {
   canvases = canvases,
   screenWatcher = screenWatcher,
   themeWatcher = themeWatcher,
+  appWatcher = appWatcher,
   refreshTimer = refreshTimer,
   switchRebuildTimer = switchRebuildTimer,
   windowFilter = windowFilter,
