@@ -137,14 +137,65 @@ end
 -- launchOrFocus() resolves its argument against the app bundle's filename,
 -- but some apps run under a different process name (Visual Studio Code.app
 -- runs as "Code"; WhatsApp's name carries an invisible directional mark), so
--- check both when deciding whether the bound app is already frontmost.
+-- check both when deciding whether an app is the bound one.
+local function matchesApp(app, appName)
+  if app:name() == appName then return true end
+  local path = app:path()
+  return path ~= nil and path:match("([^/]+)%.app$") == appName
+end
+
+-- Bundle IDs learned from the frontmost check, for runningApp() below.
+local bundleIDFor = {}
+
 local function frontmostIfMatches(appName)
   local front = hs.application.frontmostApplication()
-  if not front then return nil end
-  if front:name() == appName then return front end
-  local path = front:path()
-  if path and path:match("([^/]+)%.app$") == appName then return front end
-  return nil
+  if not (front and matchesApp(front, appName)) then return nil end
+  bundleIDFor[appName] = front:bundleID()
+  return front
+end
+
+-- The running app bound to this name, if any. Two obvious routes are traps:
+--   * hs.application.get() matches names by substring and, when no name matches
+--     (the app is not running yet, or runs under another process name), falls
+--     back to searching every window title of every app -- a full AX sweep that
+--     stalls the Lua thread and can hand back an unrelated app that merely has
+--     the name in a window title.
+--   * matchesApp() over runningApplications(): app:path() raises an Objective-C
+--     exception for any process without a bundle URL (Hammerspoon 1.1.1), and
+--     there is always one. It is only safe on the frontmost app.
+-- So: exact process name, plus the bundle ID remembered from the last time the
+-- app was seen frontmost, which covers the apps whose process name differs.
+-- Until then such an app reads as not running and takes the slower `open -a`.
+local function runningApp(appName)
+  local id = bundleIDFor[appName]
+  return id and hs.application.applicationsForBundleID(id)[1]
+      or (hs.application.find(appName, true))
+end
+
+-- Launch tracking -------------------------------------------------------------
+-- An app between "will launch" and "did launch" does not answer AX queries
+-- until its main loop is running, and a query that waits on it blocks the
+-- single Lua thread -- every other hotkey queues behind it. Record launch start
+-- times by pid so the settle step can wait such an app out instead of asking it
+-- anything. Entries expire after LAUNCH_TIMEOUT, so an app that hangs while
+-- starting cannot keep a settle polling forever.
+local LAUNCH_TIMEOUT = 30  -- seconds
+local launchStartedAt = {}
+local appEvents = hs.application.watcher
+local launchWatcher = appEvents.new(function(_, event, app)
+  local pid = app and app:pid()
+  if not pid then return end
+  if event == appEvents.launching then
+    launchStartedAt[pid] = hs.timer.secondsSinceEpoch()
+  elseif event == appEvents.launched or event == appEvents.terminated then
+    launchStartedAt[pid] = nil
+  end
+end)
+launchWatcher:start()
+
+local function isLaunching(app)
+  local startedAt = launchStartedAt[app:pid()]
+  return startedAt ~= nil and hs.timer.secondsSinceEpoch() - startedAt < LAUNCH_TIMEOUT
 end
 
 -- Delay before focusing a window after a ctrl+N Space switch: AX needs the
@@ -269,32 +320,66 @@ end
 -- so poll a few times before concluding the launch went nowhere.
 local LAUNCH_SETTLE_RETRIES = 8
 
-local function settleAfterLaunch(appName, tries)
+-- Bumped by every app key. Nothing here blocks while an app starts, so another
+-- app key can land mid-launch; the latest one wins, and a settle that finds the
+-- counter moved on drops out rather than pulling focus back to its own app.
+local settleGen = 0
+
+local function settleAfterLaunch(appName, tries, gen)
+  if gen ~= settleGen then return end
+  local function retry(left)
+    hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
+      settleAfterLaunch(appName, left, gen)
+    end)
+  end
   local front = frontmostIfMatches(appName)
-  if front then
+  local running = front or runningApp(appName)
+  if running and isLaunching(running) then
+    retry(tries)  -- costs no try: LAUNCH_TIMEOUT bounds this wait instead
+  elseif front then
     withStandardWindows(front, function(wins)
       if #wins == 0 then cycleAppWindowsIn(front, wins) end
     end)
-    return
-  end
-  local running = hs.application.get(appName)
-  if running then
+  elseif running then
     running:activate(true)
-    return
-  end
-  if tries > 0 then
-    hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
-      settleAfterLaunch(appName, tries - 1)
-    end)
+  elseif tries > 0 then
+    retry(tries - 1)
   end
 end
 
--- Bring the app forward after something has launched or poked it (launchOrFocus,
--- or a URL scheme the app handles), hopping to its Desktop if it isn't here.
-local function settleApp(app)
+-- Bring the app forward after something has launched or poked it, hopping to
+-- its Desktop if it isn't here.
+local function settleApp(app, gen)
   hs.timer.doAfter(CYCLE_SPACE_FOCUS_DELAY, function()
-    settleAfterLaunch(app, LAUNCH_SETTLE_RETRIES)
+    settleAfterLaunch(app, LAUNCH_SETTLE_RETRIES, gen)
   end)
+end
+
+-- Cold launch off the Lua thread: launchOrFocus() is a synchronous
+-- LaunchServices call, and the thread is held for as long as it takes. The
+-- .app retry mirrors launchOrFocus() above, in case `open -a` trips on a
+-- dotted name the same way; settling always uses the display name.
+local function openAsync(appName, gen, target)
+  target = target or appName
+  hs.task.new("/usr/bin/open", function(exitCode)
+    if exitCode == 0 then
+      settleApp(appName, gen)
+    elseif not target:match("%.app$") then
+      openAsync(appName, gen, target .. ".app")
+    end
+  end, { "-a", target }):start()
+end
+
+-- Launch or focus the app, then settle it, without ever waiting on the launch.
+local function launchApp(app)
+  settleGen = settleGen + 1
+  local gen = settleGen
+  if runningApp(app) then
+    launchOrFocus(app)  -- already running: returns at once, no process spawn
+    settleApp(app, gen)
+  else
+    openAsync(app, gen)
+  end
 end
 
 -- Define keybinding function - bind hyper+key to launch/focus app.
@@ -303,21 +388,23 @@ end
 local function bindApp(mods, key, app)
   f19:bind(mods, key, function()
     local front = frontmostIfMatches(app)
-    if front then
+    if not front then
+      launchApp(app)
+    elseif not isLaunching(front) then  -- mid-launch: its settle is still pending
+      settleGen = settleGen + 1
       cycleAppWindows(front)
-      return
     end
-    launchOrFocus(app)
-    settleApp(app)
   end)
 end
 
--- Export module (releaseTap is returned so package.loaded keeps a reference to
--- it; an unreferenced event tap can be garbage-collected and silently stop).
+-- Export module (releaseTap and launchWatcher are returned so package.loaded
+-- keeps a reference to them; an unreferenced event tap or watcher can be
+-- garbage-collected and silently stop).
 return {
   modal = f19,
   bindApp = bindApp,
-  settleApp = settleApp,
+  launchApp = launchApp,
   releaseTap = releaseTap,
+  launchWatcher = launchWatcher,
   watchdog = watchdog,
 }

@@ -78,8 +78,7 @@ end
 setTitle("…")
 menubar:setTooltip(TOOLTIP)
 menubar:setClickCallback(function()
-  hs.application.launchOrFocus("Claude")
-  require("hyperkey").settleApp("Claude")   -- hops to its Desktop if elsewhere
+  require("hyperkey").launchApp("Claude")   -- hops to its Desktop if elsewhere
   if hs.timer.secondsSinceEpoch() - lastFetch >= CLICK_REFRESH_MIN_GAP then refresh() end
 end)
 local timer = hs.timer.doEvery(REFRESH_INTERVAL, refresh)
