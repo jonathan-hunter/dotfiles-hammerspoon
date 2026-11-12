@@ -2,7 +2,7 @@
 -- Focus follows mouse: the window under the pointer is raised and focused once
 -- the pointer settles in it. Fast sweeps across a window never fire, so cutting
 -- across B on the way to somewhere else leaves focus alone. Hyper+Opt+F toggles;
--- on at load.
+-- off at load.
 --
 -- Settling: a slow move checks almost at once (you decelerate into a target); a
 -- fast move pushes the check out until the pointer has been still SETTLE_DELAY.
@@ -16,7 +16,7 @@ local AX_TIMEOUT     = 0.1   -- seconds; a hung app can't freeze the check
 
 local taskbar = require("space_taskbar")
 
-local enabled = true
+local enabled = false
 local timer           -- the settle timer, created below check()
 local lastX, lastY, lastT  -- pointer position and time at the last mouseMoved
 local systemWide = hs.axuielement.systemWideElement()
@@ -90,7 +90,7 @@ local tap = hs.eventtap.new({ hs.eventtap.event.types.mouseMoved }, function()
   lastX, lastY, lastT = p.x, p.y, t
   return false
 end)
-tap:start()
+if enabled then tap:start() end
 
 -- macOS silently disables a tap after a slow callback or a secure-input spell;
 -- re-arm it rather than have the feature quietly die until the next reload.
