@@ -17,7 +17,9 @@ local function extraMailboxes()
 end
 
 local function markJunkRead()
-  if hs.application.get("Mail") then
+  -- By bundle ID: hs.application.get("Mail") sweeps every window title of every
+  -- app (50-110ms) whenever Mail is not running.
+  if hs.application.applicationsForBundleID("com.apple.mail")[1] then
     local args = { script }
     for _, mb in ipairs(extraMailboxes()) do table.insert(args, mb) end
     hs.task.new("/usr/bin/osascript", function(code, _, err)
