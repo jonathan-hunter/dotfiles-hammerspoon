@@ -41,6 +41,9 @@ local FIT_STEPS = {
 }
 
 local windowApps = {}   -- windowID -> bundleID
+-- Window ids remembered since the helper was last started. Its snapshot may
+-- predate them, so the prune that follows it leaves them alone.
+local freshWindows = {}
 local iconCache = {}    -- bundleID -> hs.image (false = known missing)
 -- screen UUID -> array indexed by that screen's Desktop number:
 -- { bundles = {...}, spaceId = n }. Each display has its own Spaces.
@@ -77,6 +80,7 @@ local function rememberWindow(win)
   local bundle = app and app:bundleID()
   if not bundle then return end
   windowApps[id] = bundle
+  freshWindows[id] = true
 end
 
 -- A built-in screen with a notch (its menu bar is 33pt tall, vs 24).
@@ -84,8 +88,19 @@ local function hasNotch(scr)
   return scr:name():find("Built%-in") and scr:frame().y - scr:fullFrame().y >= 30
 end
 
+local function anyNotchedScreen()
+  for _, scr in ipairs(hs.screen.allScreens()) do
+    if hasNotch(scr) then return true end
+  end
+  return false
+end
+
 -- Measure where the front app's menus end. Returns true if that moved.
 local function measureAppMenus()
+  -- Only the notched layout uses the result, and the AX round trips cost
+  -- 10-60ms on every app switch; a screen change triggers a rebuild, which
+  -- measures again once a notched display is back.
+  if not anyNotchedScreen() then return false end
   local app = hs.application.frontmostApplication()
   -- AX into our own process from the main thread can deadlock; keep the last value
   if not app or app:pid() == hs.processInfo.processID then return false end
@@ -371,23 +386,19 @@ local helperAvailable = hs.fs.attributes(HELPER_BIN, "mode") == "file"
 local helperTask = nil
 local compileTask = nil
 
--- Remember every window AX sees (the current Space). With `reported`, also
--- mark each one so the prune below keeps it.
-local function sweepAX(reported)
-  for _, win in ipairs(hs.window.orderedWindows()) do
-    rememberWindow(win)
-    if reported then
-      local ok, id = pcall(win.id, win)
-      if ok and id then reported[id] = true end
-    end
-  end
+-- Remember every window AX sees (the current Space only). The fallback for
+-- when the helper is missing, busy or failed: orderedWindows() asks every
+-- running app for its windows, 20-200ms on the Lua thread and worst right
+-- after a Space switch, so a rebuild the helper has answered never runs it.
+local function sweepAX()
+  for _, win in ipairs(hs.window.orderedWindows()) do rememberWindow(win) end
 end
 
--- Full model rebuild from AX plus the helper's all-Spaces report. The AX
--- sweep (~20-35ms) and placement run once, in the helper's callback, rather
--- than once before it and again after; without the helper they run now.
+-- Full model rebuild from the helper's all-Spaces report, falling back to an
+-- AX sweep of the current Space without it.
 local function rebuildModel()
   if helperAvailable and not helperTask then
+    freshWindows = {}
     helperTask = hs.task.new(HELPER_BIN, function(exitCode, stdOut)
       helperTask = nil
       local reported = nil
@@ -409,16 +420,18 @@ local function rebuildModel()
         end
         statusItems = items
       end
-      -- Swept after the helper's snapshot, so a window created since then is
-      -- still marked and doesn't flicker out in the prune.
-      sweepAX(reported)
       if reported then
         -- Prune windows the helper no longer reports: Electron apps hide
         -- their window on close instead of destroying it, so windowDestroyed
-        -- never fires and a stale entry would keep the app's icon alive.
+        -- never fires and a stale entry would keep the app's icon alive. A
+        -- window that appeared after the helper's snapshot is in neither
+        -- list; freshWindows keeps it, and the event that announced it has
+        -- already queued the rebuild that will report it.
         for wid in pairs(windowApps) do
-          if not reported[wid] then windowApps[wid] = nil end
+          if not (reported[wid] or freshWindows[wid]) then windowApps[wid] = nil end
         end
+      else
+        sweepAX()
       end
       placeAndRender()
     end)
