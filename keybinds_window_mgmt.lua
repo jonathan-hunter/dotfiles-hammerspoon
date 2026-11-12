@@ -8,8 +8,7 @@ navigation, and shift+hyper+1..9 to move the focused window to space N.
 
 -- Configuration
 local WINDOW_FOCUS_DELAY = 0.1
-local NAVIGATION_REFRESH_DELAY = 0.12
-local NAVIGATION_SPACE_REFRESH_DELAY = 0.20
+local NAVIGATION_SPACE_SETTLE = 0.20
 local PADDING = 1
 local spaces = require("hs.spaces")
 hs.window.animationDuration = 0
@@ -113,30 +112,36 @@ end
 
 -- Directional focus is called frequently while Hyper is held. Calling
 -- focusWindowWest/North/South/East without candidates makes Hammerspoon query
--- every application on every keypress, so maintain a current-Space candidate
--- list and refresh it once when the window set or active Space changes.
-local navigationWindows = {}
+-- every application on every keypress, so keep a current-Space candidate list.
+-- It is built lazily: window and Space events only mark it stale (nil), and the
+-- next press that needs it pays for the orderedWindows() sweep (~15-40ms).
+-- Rebuilding on every event instead ran that sweep in the background after
+-- each window change, on top of the taskbar's own.
+local navigationWindows = nil
+-- A Space transition is still in flight before this time; a sweep made during
+-- it can see the outgoing Space's windows, so its result is used but not kept.
+local navigationSettleAt = 0
 
-local function refreshNavigationWindows()
-  local refreshed = {}
-  for _, win in ipairs(hs.window.orderedWindows()) do
-    if win:isStandard() and win:isVisible() then
-      refreshed[#refreshed + 1] = win
-    end
-  end
-  navigationWindows = refreshed
+local function invalidateNavigation()
+  navigationWindows = nil
 end
 
-local navigationRefreshTimer = hs.timer.delayed.new(
-  NAVIGATION_REFRESH_DELAY,
-  refreshNavigationWindows
-)
+local function navigationCandidates()
+  if navigationWindows then return navigationWindows end
+  local found = {}
+  for _, win in ipairs(hs.window.orderedWindows()) do
+    if win:isStandard() and win:isVisible() then
+      found[#found + 1] = win
+    end
+  end
+  if hs.timer.secondsSinceEpoch() >= navigationSettleAt then navigationWindows = found end
+  return found
+end
 
 local function focusDirection(method)
   local win = hs.window.focusedWindow()
   if not win then return end
-  if #navigationWindows == 0 then refreshNavigationWindows() end
-  win[method](win, navigationWindows)
+  win[method](win, navigationCandidates())
 end
 
 f19:bind({}, "h", function() focusDirection("focusWindowWest") end)
@@ -154,16 +159,14 @@ local cacheEvents = {
   hs.window.filter.windowHidden,
   hs.window.filter.windowUnhidden,
 }
-windowFilter:subscribe(cacheEvents, function()
-  navigationRefreshTimer:start()
-end)
+windowFilter:subscribe(cacheEvents, invalidateNavigation)
 
--- Clear stale candidates immediately on a Space change, then rebuild after the
--- reduced-motion transition has settled. The watcher itself performs no AX or
--- Spaces IPC, keeping it out of the switching hot path.
+-- Drop the candidates on a Space change and hold off caching new ones until
+-- the reduced-motion transition has settled. The watcher itself performs no AX
+-- or Spaces IPC, keeping it out of the switching hot path.
 local navigationSpaceWatcher = spaces.watcher.new(function()
-  navigationWindows = {}
-  navigationRefreshTimer:start(NAVIGATION_SPACE_REFRESH_DELAY)
+  invalidateNavigation()
+  navigationSettleAt = hs.timer.secondsSinceEpoch() + NAVIGATION_SPACE_SETTLE
 end)
 navigationSpaceWatcher:start()
 
@@ -172,17 +175,14 @@ navigationSpaceWatcher:start()
 -- background window destruction.
 local closeFocusTimer = hs.timer.delayed.new(WINDOW_FOCUS_DELAY, function()
   if hs.window.focusedWindow() then return end
-  refreshNavigationWindows()
-  if navigationWindows[1] then navigationWindows[1]:focus() end
+  local front = navigationCandidates()[1]
+  if front then front:focus() end
 end)
 
 windowFilter:subscribe(hs.window.filter.windowDestroyed, function()
-  navigationRefreshTimer:start()
+  invalidateNavigation()
   closeFocusTimer:start()
 end)
-
--- Populate the candidate cache after this config load finishes.
-navigationRefreshTimer:start(0)
 
 local function switchToSpaceNumber(n)
   hs.eventtap.keyStroke({"ctrl"}, tostring(n % 10), 0)  -- Desktop 10 is ctrl+0
@@ -299,6 +299,5 @@ end
 return {
   windowFilter = windowFilter,
   navigationSpaceWatcher = navigationSpaceWatcher,
-  navigationRefreshTimer = navigationRefreshTimer,
   closeFocusTimer = closeFocusTimer,
 }
