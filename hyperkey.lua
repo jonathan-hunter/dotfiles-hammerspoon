@@ -178,17 +178,24 @@ end
 -- single Lua thread -- every other hotkey queues behind it. Record launch start
 -- times by pid so the settle step can wait such an app out instead of asking it
 -- anything. Entries expire after LAUNCH_TIMEOUT, so an app that hangs while
--- starting cannot keep a settle polling forever.
+-- starting cannot keep a settle polling forever. For JUST_LAUNCHED seconds
+-- after "did launch" the app is still busy opening its windows, and the settle
+-- step leaves it alone for that too.
 local LAUNCH_TIMEOUT = 30  -- seconds
+local JUST_LAUNCHED = 5    -- seconds
 local launchStartedAt = {}
+local launchedAt = {}
 local appEvents = hs.application.watcher
 local launchWatcher = appEvents.new(function(_, event, app)
   local pid = app and app:pid()
   if not pid then return end
   if event == appEvents.launching then
     launchStartedAt[pid] = hs.timer.secondsSinceEpoch()
-  elseif event == appEvents.launched or event == appEvents.terminated then
+  elseif event == appEvents.launched then
     launchStartedAt[pid] = nil
+    launchedAt[pid] = hs.timer.secondsSinceEpoch()
+  elseif event == appEvents.terminated then
+    launchStartedAt[pid], launchedAt[pid] = nil, nil
   end
 end)
 launchWatcher:start()
@@ -196,6 +203,11 @@ launchWatcher:start()
 local function isLaunching(app)
   local startedAt = launchStartedAt[app:pid()]
   return startedAt ~= nil and hs.timer.secondsSinceEpoch() - startedAt < LAUNCH_TIMEOUT
+end
+
+local function justLaunched(app)
+  local at = launchedAt[app:pid()]
+  return at ~= nil and hs.timer.secondsSinceEpoch() - at < JUST_LAUNCHED
 end
 
 -- Delay before focusing a window after a ctrl+N Space switch: AX needs the
@@ -337,9 +349,13 @@ local function settleAfterLaunch(appName, tries, gen)
   if running and isLaunching(running) then
     retry(tries)  -- costs no try: LAUNCH_TIMEOUT bounds this wait instead
   elseif front then
-    withStandardWindows(front, function(wins)
-      if #wins == 0 then cycleAppWindowsIn(front, wins) end
-    end)
+    -- A just-launched app is opening its windows on this Space; asking it for
+    -- them now costs ~100ms of AX on a busy app and has nothing to hop to.
+    if not justLaunched(front) then
+      withStandardWindows(front, function(wins)
+        if #wins == 0 then cycleAppWindowsIn(front, wins) end
+      end)
+    end
   elseif running then
     running:activate(true)
   elseif tries > 0 then
